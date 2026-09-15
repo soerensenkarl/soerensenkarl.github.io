@@ -218,8 +218,8 @@ const obox = o => [o.x, sillOf(o), o.x + o.w, sillOf(o) + o.h];
 // an element [item, x0, y0, x1, y1] in 5 mm ticks as a box in metres from the wall's bottom-left corner
 const ebox = e => [e[1] * .005 - 4 + design.L / 2, e[2] * .005 - 1.6 + design.H / 2, e[3] * .005 - 4 + design.L / 2, e[4] * .005 - 1.6 + design.H / 2];
 const BLUE = "#0000ff";                                  // the outline on a part the moment the network writes it
-// one neutral timber, one neutral grey: the only fills on the page
-const FILL = { block: ["#dedcd6", "#a6a39b"], lintel: ["#d5d5d2", "#9b9b96"], timber: ["#e1d8c9", "#b0a181"] };
+// bright amber timber, grey blocks: the only fills on the page
+const FILL = { block: ["#c9c9c9", "#6b6b6b"], lintel: ["#8d8d8d", "#3a3a3a"], timber: ["#ffb400", "#e05a00"] };   // punchy: amber timber, dark strokes
 
 function frame(b, dash, colour, w) {                     // a rectangle in metres, drawn as a line
   ctx.save(); ctx.setLineDash(dash); ctx.strokeStyle = colour; ctx.lineWidth = w;
@@ -244,7 +244,7 @@ function paint() {
     ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, Math.max(0, w - 1), Math.max(0, h - 1));
   }
-  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; frame(ebox(hot.e), [], BLUE, 1.6); ctx.restore(); }   // the part just written
+  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; frame(ebox(hot.e), [], BLUE, 3); ctx.restore(); }   // the part just written
 
   frame([0, 0, L, H], [1, 3], "#555", 1);                // the wall, and the three crosses that size it
   cross(0, 0, 7, false);
