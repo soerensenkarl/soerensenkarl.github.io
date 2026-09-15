@@ -113,13 +113,11 @@ function randomDesign() {
 // ---------------------------------------------------------------- the link, so a wall can be shared
 function writeHash() {
   const o = design.openings.map(o => o.kind === "door" ? `d${r3(o.x)}_${r3(o.w)}_${r3(o.h)}` : `w${r3(o.x)}_${r3(o.w)}_${r3(o.h)}_${r3(o.sill)}`).join("~");
-  history.replaceState(null, "", "#" + new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o, ...(fixedNet ? { fix: 1 } : {}) }));
+  history.replaceState(null, "", "#" + new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o }));
 }
-let fixedNet = false;                                    // fix=1 in the link: one network, its pill hidden (a separate artifact)
 if (location.hash.length > 2) try {
   const p = new URLSearchParams(location.hash.slice(1));
   if (MODELS.some(m => m.id === p.get("n"))) modelId = p.get("n");
-  if (p.get("fix") && MODELS.some(m => m.id === p.get("n"))) { fixedNet = true; document.getElementById("model").hidden = true; if (!MODELS.find(m => m.id === modelId).scripts.includes("block")) document.getElementById("sw").hidden = true; }
   const ops = (p.get("o") || "").split("~").filter(Boolean).map(s => {
     const val = s.slice(1).split("_").map(Number);
     return s[0] === "d" ? door(val[0], val[1], val[2]) : win(val[0], val[1], val[2], val[3]);
@@ -389,22 +387,12 @@ canvas.addEventListener("keydown", e => {
 function sync() {
   const m = MODELS.find(m => m.id === modelId);
   $("caption").textContent = `${design.script === "block" ? "Concrete blocks" : "Timber frame"} · ${design.L.toFixed(2)} × ${design.H.toFixed(2)} m`;
-  $("model").value = modelId;
   $("script").checked = design.script === "block";
   $("script").disabled = m.scripts.length < 2;
   $("sw").className = `sw ${design.script}${m.scripts.length < 2 ? " off" : ""}`;
+  $("sw").hidden = m.scripts.length < 2;
   $("addDoor").disabled = $("addWindow").disabled = design.openings.length >= MAXOPS || !freeSpan(design);
 }
-$("model").innerHTML = MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
-$("model").addEventListener("change", e => {
-  modelId = e.target.value;
-  const m = MODELS.find(m => m.id === modelId);
-  if (!m.scripts.includes(design.script)) design.script = m.scripts[0];
-  runId++;
-  worker.postMessage({ type: "cancel" });
-  parts = []; pending = []; hot = null; wantRun = true;
-  writeHash(); sync(); paint(); loadModel();
-});
 $("script").addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
 $("addDoor").addEventListener("click", () => addOpening("door"));
 $("addWindow").addEventListener("click", () => addOpening("window"));

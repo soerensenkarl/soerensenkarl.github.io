@@ -23,9 +23,7 @@ button, select { font: inherit; font-size: 13px; line-height: 1.2; color: #111; 
   border-radius: 999px; padding: 9px 16px; cursor: pointer; appearance: none; -webkit-appearance: none }
 select { padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, #111 50%), linear-gradient(135deg, #111 50%, transparent 50%);
   background-position: right 17px center, right 13px center; background-size: 4px 4px; background-repeat: no-repeat }
-button:hover, select:hover { border-color: #bbb }
-#model { background-color: #111; border-color: #111; color: #fff;
-  background-image: linear-gradient(45deg, transparent 50%, #fff 50%), linear-gradient(135deg, #fff 50%, transparent 50%) }
+button:hover { border-color: #bbb }
 :disabled { color: #ccc; border-color: #eee; cursor: default; background-image: none }
 .sw { display: inline-flex; align-items: center; gap: 9px; padding: 0 4px; cursor: pointer;
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #c3c3be; -webkit-user-select: none; user-select: none }
@@ -47,10 +45,12 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
   .pills { justify-content: center }
 }
 #load{height:3px;width:220px;max-width:60vw;background:#e8e8e8;margin-top:8px;border-radius:2px;overflow:hidden}#load i{display:block;height:100%;width:0;background:#3b8cff;box-shadow:0 0 6px #6fb2ff;transition:width .15s}#load[hidden]{display:none}
+.back{position:fixed;top:18px;left:22px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#888;text-decoration:none}.back:hover{color:#111}
 </style>
 </head>
 <body>
 <main>
+  <a class="back" href="../">← artifacts</a>
   <canvas id="canvas" tabindex="0" aria-label="The wall: drag the crosses at its corners, and its openings"></canvas>
   <p>A neural network writes the wall, part by part, in your browser. Drag the wall and its openings.</p>
   <div class="bar">
@@ -60,7 +60,6 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
       <button id="addWindow" type="button">+ window</button>
       <button id="random" type="button">↻ random</button>
       <label class="sw" id="sw"><span class="t">timber</span><input type="checkbox" id="script" aria-label="Build concrete blocks instead of a timber frame"><span class="b">blocks</span></label>
-      <select id="model" aria-label="Which network"></select>
     </div>
   </div>
 </main>
