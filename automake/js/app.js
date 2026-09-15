@@ -410,13 +410,14 @@ canvas.addEventListener("keydown", e => {
 function sync() {
   const m = MODELS.find(m => m.id === modelId);
   $("caption").textContent = `${design.script === "block" ? "Concrete blocks" : "Timber frame"} · ${design.L.toFixed(2)} × ${design.H.toFixed(2)} m`;
-  $("script").checked = design.script === "block";
-  $("script").disabled = m.scripts.length < 2;
-  $("sw").className = `sw ${design.script}${m.scripts.length < 2 ? " off" : ""}`;
-  $("sw").hidden = m.scripts.length < 2;
+  const sw = $("sw");                                    // a control that can do nothing is removed, never greyed
+  if (sw) {
+    if (m.scripts.length < 2) sw.remove();
+    else { $("script").checked = design.script === "block"; sw.className = `sw ${design.script}`; }
+  }
   $("addDoor").disabled = $("addWindow").disabled = design.openings.length >= MAXOPS || !freeSpan(design);
 }
-$("script").addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
+$("script")?.addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
 $("addDoor").addEventListener("click", () => addOpening("door"));
 $("addWindow").addEventListener("click", () => addOpening("window"));
 $("random").addEventListener("click", () => { design = randomDesign(); sel = -1; changed(); });
