@@ -78,6 +78,38 @@ function addOpening(kind) {
   changed();
 }
 
+// a wall drawn the way the training data is drawn (automake/mvp/dataset.py: train_spec, extended_spec, _draw, _place):
+// the training domain, and one wall in four from the extended one (3 or 4 openings, longer, taller, or a wide opening)
+function randomDesign() {
+  const U = (a, b) => a + Math.random() * (b - a), step = (v, k) => Math.round(v / k) * k;
+  const nTrain = () => { const r = Math.random(); return r < 0.2 ? 0 : r < 0.65 ? 1 : 2; };
+  for (;;) {
+    const extended = Math.random() < 0.25;
+    const tags = extended ? ["openings", "long", "tall", "wide"].filter(() => Math.random() < 0.5) : [];
+    if (extended && !tags.length) continue;                             // an extended wall is extended in some way
+    let n = tags.includes("openings") ? 3 + Math.round(Math.random()) : nTrain();
+    if (tags.includes("wide")) n = Math.max(n, 1);
+    const L = step(U(...(tags.includes("long") ? [6.2, 7.9] : [2.4, 6.0])), 0.01);
+    const H = step(U(...(tags.includes("tall") ? [2.85, 3.1] : [2.2, 2.8])), 0.01);
+    const wideI = tags.includes("wide") && n ? Math.floor(Math.random() * n) : -1;
+    const ops = [];
+    for (let i = 0; i < n; i++) {
+      const [wLo, wHi] = i === wideI ? [2.0, 3.0] : [0.4, 1.8];
+      if (Math.random() < 0.4) ops.push(door(0, step(U(Math.max(0.6, wLo), wHi), 0.01), step(U(1.8, Math.max(1.8, Math.min(2.4, H - HEAD))), 0.01)));
+      else {
+        const w = step(U(wLo, wHi), 0.01), sill = step(U(MINSILL, Math.min(1.5, H - HEAD - MINH)), 0.01);
+        ops.push(win(0, w, step(U(MINH, Math.max(MINH, Math.min(1.8, H - HEAD - sill))), 0.01), sill));
+      }
+    }
+    const spare = L - 2 * SIDE - ops.reduce((s, o) => s + o.w, 0) - GAP * Math.max(0, n - 1);
+    if (spare < 0) continue;                                            // the openings do not fit: draw again
+    const slack = ops.map(() => U(0, spare)).sort((a, b) => a - b);
+    let a = SIDE, used = 0;
+    ops.forEach((o, i) => { a += slack[i] - used; used = slack[i]; o.x = q(a); a += o.w + GAP; });
+    return fit({ script: design.script, L, H, openings: ops });
+  }
+}
+
 // ---------------------------------------------------------------- the link, so a wall can be shared
 function writeHash() {
   const o = design.openings.map(o => o.kind === "door" ? `d${r3(o.x)}_${r3(o.w)}_${r3(o.h)}` : `w${r3(o.x)}_${r3(o.w)}_${r3(o.h)}_${r3(o.sill)}`).join("~");
@@ -185,6 +217,7 @@ const mx = p => (p - v.ox) / v.s, my = p => (v.oy - p) / v.s;
 const obox = o => [o.x, sillOf(o), o.x + o.w, sillOf(o) + o.h];
 // an element [item, x0, y0, x1, y1] in 5 mm ticks as a box in metres from the wall's bottom-left corner
 const ebox = e => [e[1] * .005 - 4 + design.L / 2, e[2] * .005 - 1.6 + design.H / 2, e[3] * .005 - 4 + design.L / 2, e[4] * .005 - 1.6 + design.H / 2];
+const BLUE = "#1d5fbf";                                  // the outline on a part the moment the network writes it
 // one neutral timber, one neutral grey: the only fills on the page
 const FILL = { block: ["#dedcd6", "#a6a39b"], lintel: ["#d5d5d2", "#9b9b96"], timber: ["#e1d8c9", "#b0a181"] };
 
@@ -211,7 +244,7 @@ function paint() {
     ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, Math.max(0, w - 1), Math.max(0, h - 1));
   }
-  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; frame(ebox(hot.e), [], "#111", 1.5); ctx.restore(); }
+  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; frame(ebox(hot.e), [], BLUE, 1.6); ctx.restore(); }   // the part just written
 
   frame([0, 0, L, H], [1, 3], "#555", 1);                // the wall, and the three crosses that size it
   cross(0, 0, 7, false);
@@ -350,6 +383,7 @@ $("model").addEventListener("change", e => {
 $("script").addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
 $("addDoor").addEventListener("click", () => addOpening("door"));
 $("addWindow").addEventListener("click", () => addOpening("window"));
+$("random").addEventListener("click", () => { design = randomDesign(); sel = -1; changed(); });
 addEventListener("resize", paint);
 if (window.ResizeObserver) new ResizeObserver(paint).observe(canvas);
 
