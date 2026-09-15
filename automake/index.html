@@ -3,114 +3,55 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Automake · networks that write walls</title>
-<meta name="description" content="Neural networks that write a wall part by part, running in your browser.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='6' height='3' fill='%238d8a82'/%3E%3Crect x='8' y='3' width='7' height='3' fill='%238d8a82'/%3E%3Crect x='1' y='7' width='3' height='3' fill='%23c9c5bb'/%3E%3Crect x='5' y='7' width='6' height='3' fill='%238d8a82'/%3E%3Crect x='12' y='7' width='3' height='3' fill='%23c9c5bb'/%3E%3Crect x='1' y='11' width='6' height='3' fill='%238d8a82'/%3E%3Crect x='8' y='11' width='7' height='3' fill='%231f6fd6'/%3E%3C/svg%3E">
+<title>Automake · draw a wall, a network fills it in</title>
+<meta name="description" content="Drag a wall and its openings; a neural network writes every part of it, live, in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='6' height='3' fill='%23c9bda6'/%3E%3Crect x='8' y='3' width='7' height='3' fill='%23c9bda6'/%3E%3Crect x='1' y='7' width='3' height='3' fill='%23e8e6e1'/%3E%3Crect x='5' y='7' width='6' height='3' fill='%23c9bda6'/%3E%3Crect x='12' y='7' width='3' height='3' fill='%23e8e6e1'/%3E%3Crect x='1' y='11' width='14' height='3' fill='%23c9bda6'/%3E%3C/svg%3E">
 <script src="coi-serviceworker.min.js"></script><!-- MIT, Guido Zuidhof: shared memory for the model threads on hosts without COOP/COEP headers -->
-<link rel="stylesheet" href="css/style.css">
-<link rel="modulepreload" href="js/app.js">
-<link rel="modulepreload" href="js/wall.js">
-<link rel="modulepreload" href="js/draw.js">
+<style>
+* { box-sizing: border-box }
+body { margin: 0; min-height: 100vh; background: #fff; color: #111; display: flex; flex-direction: column; justify-content: center;
+  padding: env(safe-area-inset-top, 0) 24px calc(10px + env(safe-area-inset-bottom, 0));
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Arial, sans-serif; -webkit-font-smoothing: antialiased }
+main { width: 100%; max-width: 1060px; margin: auto; display: flex; flex-direction: column; gap: 26px; padding: 24px 0 }
+canvas { display: block; width: 100%; aspect-ratio: 2.3; min-height: 200px; max-height: 64vh; touch-action: none; outline: none; -webkit-tap-highlight-color: transparent }
+p { margin: 0; text-align: center; color: #8d8d88; font-size: 13.5px }
+.bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px }
+#caption, #status { font-size: 11px; letter-spacing: .14em; text-transform: uppercase }
+#status { color: #aaa; letter-spacing: .08em; margin-top: 4px; min-height: 1.5em }
+.pills { display: flex; flex-wrap: wrap; gap: 8px }
+button, select { font: inherit; font-size: 13px; line-height: 1.2; color: #111; background: #fff; border: 1px solid #e2e2de;
+  border-radius: 999px; padding: 9px 16px; cursor: pointer; appearance: none; -webkit-appearance: none }
+select { padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, #111 50%), linear-gradient(135deg, #111 50%, transparent 50%);
+  background-position: right 17px center, right 13px center; background-size: 4px 4px; background-repeat: no-repeat }
+button:hover, select:hover { border-color: #bbb }
+#model { background-color: #111; border-color: #111; color: #fff;
+  background-image: linear-gradient(45deg, transparent 50%, #fff 50%), linear-gradient(135deg, #fff 50%, transparent 50%) }
+:disabled { color: #ccc; border-color: #eee; cursor: default; background-image: none }
+button:focus-visible, select:focus-visible { outline: 2px solid #111; outline-offset: 2px }
+footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .06em; padding: 10px 0 }
+@media (max-width: 620px) {
+  body { padding-left: 12px; padding-right: 12px }
+  main { gap: 16px; padding: 10px 0 }
+  .bar { flex-direction: column; align-items: center; gap: 12px }
+  .pills { justify-content: center }
+}
+</style>
 </head>
 <body>
-<header class="top">
-  <div class="brand"><b>Automake</b></div>
-  <p class="tag">A neural network writes a wall, part by part, right here in your browser. Change the wall and it writes again.</p>
-  <div id="status" class="status" role="status">Loading the network…</div>
-</header>
-
-<nav class="presets" id="presets" aria-label="Examples"></nav>
-
-<main class="tool">
-  <aside class="controls panel" id="controls" aria-label="Design the wall">
-    <h3>Network</h3>
-    <div class="seg models" id="modelSeg"></div>
-    <div class="hint blurb" id="modelBlurb"></div>
-    <h3>Brief</h3>
-    <div class="seg" id="scriptSeg">
-      <button data-script="frame">Timber frame</button>
-      <button data-script="block">Concrete blocks</button>
+<main>
+  <canvas id="canvas" tabindex="0" aria-label="The wall: drag the crosses at its corners, and its openings"></canvas>
+  <p>A neural network writes the wall, part by part, in your browser. Drag the wall and its openings.</p>
+  <div class="bar">
+    <div><div id="caption"></div><div id="status" role="status"></div></div>
+    <div class="pills">
+      <button id="addDoor" type="button">+ door</button>
+      <button id="addWindow" type="button">+ window</button>
+      <select id="script" aria-label="What to build"><option value="frame">timber frame</option><option value="block">concrete blocks</option></select>
+      <select id="model" aria-label="Which network"></select>
     </div>
-    <div class="hint" id="scriptHint"></div>
-    <h3>Wall</h3>
-    <div class="row"><label for="L">Length <b id="Lv"></b></label><input type="range" id="L" min="1.2" max="7.9" step="0.05"><div class="hint" id="Lh"></div></div>
-    <div class="row"><label for="H">Height <b id="Hv"></b></label><input type="range" id="H" min="2.0" max="3.1" step="0.05"><div class="hint" id="Hh"></div></div>
-    <h3>Openings <span id="opCount"></span></h3>
-    <div class="ops" id="ops"></div>
-    <div class="addops"><button class="btn" id="addDoor">+ Door</button><button class="btn" id="addWindow">+ Window</button></div>
-    <div class="hint" id="opsHint">Drag openings and the wall's edges on the drawings, too.</div>
-    <h3>Start from</h3>
-    <select class="btn" id="start">
-      <option value="empty">an empty wall</option>
-      <option value="prefix">a half-built wall (bottom first)</option>
-      <option value="subset">a wall with holes</option>
-    </select>
-    <div class="row" id="shareRow"><label for="share">Script's parts already there <b id="sharev"></b></label><input type="range" id="share" min="0.1" max="0.9" step="0.05"></div>
-    <h3>World</h3>
-    <label class="switch"><input type="checkbox" id="reject"><span>The world refuses overlapping parts</span></label>
-    <div class="hint">A geometric rule outside the network: after each pass, a new part that overlaps something or leaves the wall is not built. Off by default.</div>
-    <h3>Share</h3>
-    <button class="btn" id="copyLink">Copy a link to this wall</button>
-  </aside>
-
-  <section class="stage">
-    <div class="walls" id="walls">
-      <figure class="panel" id="scriptPanel">
-        <figcaption><b>The script's wall</b><span id="scriptCap">the reference the network is judged against</span></figcaption>
-        <svg class="wall" id="svgScript" role="img" aria-label="The script's wall"></svg>
-      </figure>
-      <figure class="panel" id="modelPanel">
-        <figcaption><b id="modelTitle">The network's wall</b><span id="modelCap"></span><span class="badge" id="beyond" hidden></span></figcaption>
-        <svg class="wall" id="svgModel" role="img" aria-label="The wall the network writes"></svg>
-        <div class="player">
-          <button class="btn" id="replay" title="Watch the build again">↺ Replay</button>
-          <button class="btn" id="pause" title="Pause or resume">❚❚</button>
-          <select class="btn" id="speed" title="Replay speed" aria-label="Replay speed">
-            <option value="2">2 picks/s</option><option value="10">1×</option><option value="40" selected>4×</option><option value="200">20×</option>
-          </select>
-          <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Position in the build">
-          <span class="pos" id="pos"></span>
-          <label class="toggles"><input type="checkbox" id="showScript" checked> script's wall</label>
-        </div>
-      </figure>
-    </div>
-    <div class="legend" id="legend"></div>
-    <div class="tiles" id="tiles"></div>
-
-    <details class="net panel" id="net">
-      <summary>Inside the network <span>what it reads, how it decides each pick, what it wrote</span></summary>
-      <div class="netgrid">
-        <figure class="panel">
-          <figcaption><b>What it reads</b><span id="tokCap"></span></figcaption>
-          <svg class="wall" id="svgTokens" role="img" aria-label="The input tokens"></svg>
-          <div class="toggles">
-            <label><input type="checkbox" id="showFree" checked> free-space boxes</label>
-            <label><input type="checkbox" id="showCanvas" checked> 40 cm coverage grid</label>
-          </div>
-          <details class="small" id="tokDetails"><summary>token table</summary><div class="tokwrap" id="tokTable"></div></details>
-        </figure>
-        <figure class="panel">
-          <figcaption><b>How it writes</b><span id="netCap"></span></figcaption>
-          <div id="netDiagram"></div>
-          <div class="card" id="pickCard"></div>
-        </figure>
-        <figure class="panel seqpanel">
-          <figcaption><b>What it wrote</b><span>item, then edges in ticks of 5 mm</span></figcaption>
-          <ol class="seq" id="seq"></ol>
-        </figure>
-      </div>
-    </details>
-  </section>
+  </div>
 </main>
-
-<footer class="note">
-  <p><b>What this is.</b> Each network is an end-to-end transformer (8.77 million parameters) that writes every part of the wall
-  itself: an item, then the part's four edges on 5 mm rulers, sixteen parts per pass until a pass writes nothing. The networks
-  learned by imitating example walls and were never given framing or bricklaying rules; they read generic boxes (the wall, its
-  openings, the parts already there), free-space boxes and a coarse coverage grid computed from them, and the brief.</p>
-  <p id="numbers"></p>
-  <p class="meta" id="meta">Runs entirely in your browser; nothing is sent anywhere. © 2026 Karl-Johan Sørensen. All rights reserved.</p>
-</footer>
+<footer>© 2026 Karl-Johan Sørensen</footer>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
