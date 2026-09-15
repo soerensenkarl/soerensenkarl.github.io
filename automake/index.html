@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Automake · networks that write walls</title>
+<meta name="description" content="Neural networks that write a wall part by part, running in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='6' height='3' fill='%238d8a82'/%3E%3Crect x='8' y='3' width='7' height='3' fill='%238d8a82'/%3E%3Crect x='1' y='7' width='3' height='3' fill='%23c9c5bb'/%3E%3Crect x='5' y='7' width='6' height='3' fill='%238d8a82'/%3E%3Crect x='12' y='7' width='3' height='3' fill='%23c9c5bb'/%3E%3Crect x='1' y='11' width='6' height='3' fill='%238d8a82'/%3E%3Crect x='8' y='11' width='7' height='3' fill='%231f6fd6'/%3E%3C/svg%3E">
+<script src="coi-serviceworker.min.js"></script><!-- MIT, Guido Zuidhof: shared memory for the model threads on hosts without COOP/COEP headers -->
+<link rel="stylesheet" href="css/style.css">
+<link rel="modulepreload" href="js/app.js">
+<link rel="modulepreload" href="js/wall.js">
+<link rel="modulepreload" href="js/draw.js">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>Automake</b></div>
+  <p class="tag">A neural network writes a wall, part by part, right here in your browser. Change the wall and it writes again.</p>
+  <div id="status" class="status" role="status">Loading the network…</div>
+</header>
+
+<nav class="presets" id="presets" aria-label="Examples"></nav>
+
+<main class="tool">
+  <aside class="controls panel" id="controls" aria-label="Design the wall">
+    <h3>Network</h3>
+    <div class="seg models" id="modelSeg"></div>
+    <div class="hint blurb" id="modelBlurb"></div>
+    <h3>Brief</h3>
+    <div class="seg" id="scriptSeg">
+      <button data-script="frame">Timber frame</button>
+      <button data-script="block">Concrete blocks</button>
+    </div>
+    <div class="hint" id="scriptHint"></div>
+    <h3>Wall</h3>
+    <div class="row"><label for="L">Length <b id="Lv"></b></label><input type="range" id="L" min="1.2" max="7.9" step="0.05"><div class="hint" id="Lh"></div></div>
+    <div class="row"><label for="H">Height <b id="Hv"></b></label><input type="range" id="H" min="2.0" max="3.1" step="0.05"><div class="hint" id="Hh"></div></div>
+    <h3>Openings <span id="opCount"></span></h3>
+    <div class="ops" id="ops"></div>
+    <div class="addops"><button class="btn" id="addDoor">+ Door</button><button class="btn" id="addWindow">+ Window</button></div>
+    <div class="hint" id="opsHint">Drag openings and the wall's edges on the drawings, too.</div>
+    <h3>Start from</h3>
+    <select class="btn" id="start">
+      <option value="empty">an empty wall</option>
+      <option value="prefix">a half-built wall (bottom first)</option>
+      <option value="subset">a wall with holes</option>
+    </select>
+    <div class="row" id="shareRow"><label for="share">Script's parts already there <b id="sharev"></b></label><input type="range" id="share" min="0.1" max="0.9" step="0.05"></div>
+    <h3>World</h3>
+    <label class="switch"><input type="checkbox" id="reject"><span>The world refuses overlapping parts</span></label>
+    <div class="hint">A geometric rule outside the network: after each pass, a new part that overlaps something or leaves the wall is not built. Off by default.</div>
+    <h3>Share</h3>
+    <button class="btn" id="copyLink">Copy a link to this wall</button>
+  </aside>
+
+  <section class="stage">
+    <div class="walls" id="walls">
+      <figure class="panel" id="scriptPanel">
+        <figcaption><b>The script's wall</b><span id="scriptCap">the reference the network is judged against</span></figcaption>
+        <svg class="wall" id="svgScript" role="img" aria-label="The script's wall"></svg>
+      </figure>
+      <figure class="panel" id="modelPanel">
+        <figcaption><b id="modelTitle">The network's wall</b><span id="modelCap"></span><span class="badge" id="beyond" hidden></span></figcaption>
+        <svg class="wall" id="svgModel" role="img" aria-label="The wall the network writes"></svg>
+        <div class="player">
+          <button class="btn" id="replay" title="Watch the build again">↺ Replay</button>
+          <button class="btn" id="pause" title="Pause or resume">❚❚</button>
+          <select class="btn" id="speed" title="Replay speed" aria-label="Replay speed">
+            <option value="2">2 picks/s</option><option value="10">1×</option><option value="40" selected>4×</option><option value="200">20×</option>
+          </select>
+          <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Position in the build">
+          <span class="pos" id="pos"></span>
+          <label class="toggles"><input type="checkbox" id="showScript" checked> script's wall</label>
+        </div>
+      </figure>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="tiles" id="tiles"></div>
+
+    <details class="net panel" id="net">
+      <summary>Inside the network <span>what it reads, how it decides each pick, what it wrote</span></summary>
+      <div class="netgrid">
+        <figure class="panel">
+          <figcaption><b>What it reads</b><span id="tokCap"></span></figcaption>
+          <svg class="wall" id="svgTokens" role="img" aria-label="The input tokens"></svg>
+          <div class="toggles">
+            <label><input type="checkbox" id="showFree" checked> free-space boxes</label>
+            <label><input type="checkbox" id="showCanvas" checked> 40 cm coverage grid</label>
+          </div>
+          <details class="small" id="tokDetails"><summary>token table</summary><div class="tokwrap" id="tokTable"></div></details>
+        </figure>
+        <figure class="panel">
+          <figcaption><b>How it writes</b><span id="netCap"></span></figcaption>
+          <div id="netDiagram"></div>
+          <div class="card" id="pickCard"></div>
+        </figure>
+        <figure class="panel seqpanel">
+          <figcaption><b>What it wrote</b><span>item, then edges in ticks of 5 mm</span></figcaption>
+          <ol class="seq" id="seq"></ol>
+        </figure>
+      </div>
+    </details>
+  </section>
+</main>
+
+<footer class="note">
+  <p><b>What this is.</b> Each network is an end-to-end transformer (8.77 million parameters) that writes every part of the wall
+  itself: an item, then the part's four edges on 5 mm rulers, sixteen parts per pass until a pass writes nothing. The networks
+  learned by imitating example walls and were never given framing or bricklaying rules; they read generic boxes (the wall, its
+  openings, the parts already there), free-space boxes and a coarse coverage grid computed from them, and the brief.</p>
+  <p id="numbers"></p>
+  <p class="meta" id="meta">Runs entirely in your browser; nothing is sent anywhere. © 2026 Karl-Johan Sørensen. All rights reserved.</p>
+</footer>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
