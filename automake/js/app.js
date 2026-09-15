@@ -217,7 +217,7 @@ const mx = p => (p - v.ox) / v.s, my = p => (v.oy - p) / v.s;
 const obox = o => [o.x, sillOf(o), o.x + o.w, sillOf(o) + o.h];
 // an element [item, x0, y0, x1, y1] in 5 mm ticks as a box in metres from the wall's bottom-left corner
 const ebox = e => [e[1] * .005 - 4 + design.L / 2, e[2] * .005 - 1.6 + design.H / 2, e[3] * .005 - 4 + design.L / 2, e[4] * .005 - 1.6 + design.H / 2];
-const BLUE = "#1d5fbf";                                  // the outline on a part the moment the network writes it
+const BLUE = "#0000ff";                                  // the outline on a part the moment the network writes it
 // one neutral timber, one neutral grey: the only fills on the page
 const FILL = { block: ["#dedcd6", "#a6a39b"], lintel: ["#d5d5d2", "#9b9b96"], timber: ["#e1d8c9", "#b0a181"] };
 
