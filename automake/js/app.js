@@ -21,6 +21,16 @@ const DEFAULT_MODEL = "o1";
 const LMIN = 1.2, LMAX = 7.9, HMIN = 2.0, HMAX = 3.15;
 const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3, MAXOPS = 4;
 
+// what each artifact opens with, and what it says about itself
+const WALLS = {
+  n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
+  o1: () => ({ script: "block", L: 4.6, H: 2.46, openings: [win(1.15, 1.23, 1.285, 0.71), door(3.37, 0.98, 2.09)] }),
+};
+const ABOUT = {
+  n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
+  o1: "The same network after it had learned timber framing, then trained for 15 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage: a small forgetting study. Its block walls are still rough (about half the script's blocks right); its framed walls are as good as before. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
+};
+
 const $ = id => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 const q = v => Math.round(v / 0.005) * 0.005;            // the 5 mm ruler the network writes on
@@ -29,8 +39,8 @@ const r3 = v => Number(v.toFixed(3));
 // ---------------------------------------------------------------- the design and its rules
 const door = (x, w, h) => ({ kind: "door", x, w, h, sill: 0 });
 const win = (x, w, h, sill) => ({ kind: "window", x, w, h, sill });
-let design = { script: "frame", L: 5.8, H: 2.7, openings: [door(0.6, 0.9, 2.1), win(2.6, 1.4, 1.2, 0.9)] };
 let modelId = DEFAULT_MODEL;
+let design = WALLS[DEFAULT_MODEL]();
 
 const sillOf = o => o.kind === "door" ? 0 : o.sill;
 const minLength = ops => ops.length ? 2 * SIDE + ops.reduce((s, o) => s + o.w, 0) + GAP * (ops.length - 1) : LMIN;
@@ -118,12 +128,13 @@ function writeHash() {
 if (location.hash.length > 2) try {
   const p = new URLSearchParams(location.hash.slice(1));
   if (MODELS.some(m => m.id === p.get("n"))) modelId = p.get("n");
+  if (WALLS[modelId]) design = WALLS[modelId]();         // each artifact opens with its own wall
   const ops = (p.get("o") || "").split("~").filter(Boolean).map(s => {
     const val = s.slice(1).split("_").map(Number);
     return s[0] === "d" ? door(val[0], val[1], val[2]) : win(val[0], val[1], val[2], val[3]);
   });
-  if (p.has("L") || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops };   // a link with only a network keeps the default wall (door and window)
-  else if (p.get("t") === "block") design.script = "block";
+  if (p.has("L") || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops };   // a link with only a network keeps that artifact's wall
+  else if (p.has("t")) design.script = p.get("t") === "block" ? "block" : "frame";
 } catch { /* keep the default wall */ }
 if (!MODELS.find(m => m.id === modelId).scripts.includes(design.script)) design.script = "frame";
 fit(design);
@@ -143,13 +154,13 @@ function loadModel() {
   window.__automake.loadStart = performance.now();
   worker.postMessage({ type: "load", url: new URL("../model/", import.meta.url).href, file: m.file, format: FORMAT,
     backend: qs.get("backend"), threads: qs.get("threads") });
-  status(`loading ${m.name}…`);
+  status("loading weights…");
 }
 
 worker.onmessage = e => {
   const ev = e.data, m = MODELS.find(m => m.file === ev.file);
   if (ev.type === "progress") {
-    if (m && m.id === modelId) status(`loading ${m.name} · ${(ev.loaded / 1e6).toFixed(1)} of ${(ev.total / 1e6).toFixed(1)} MB`);
+    if (m && m.id === modelId) status(`loading weights · ${(ev.loaded / 1e6).toFixed(1)} of ${(ev.total / 1e6).toFixed(1)} MB`);
     if (m && m.id === modelId) { $("load").hidden = false; $("load").firstElementChild.style.width = `${Math.min(100, 100 * ev.loaded / Math.max(1, ev.total))}%`; }
     return;
   }
@@ -159,7 +170,7 @@ worker.onmessage = e => {
     window.__automake.loads.push({ model: m.id, ms: performance.now() - window.__automake.loadStart, fetchMs: ev.fetchMs,
       parseMs: ev.parseMs, poolMs: ev.poolMs, helpers: ev.helpers, bytes: ev.bytes, backend: ev.backend });
     $("load").hidden = true;
-    if (wantRun) startRun(); else status(`${m.name} ready`);
+    if (wantRun) startRun(); else status("ready");
     return;
   }
   if (ev.id !== runId) return;
@@ -312,9 +323,19 @@ function hit(p) {
     for (const [cx, cy, k] of [[b[0], b[1], "lb"], [b[2], b[1], "rb"], [b[0], b[3], "lt"], [b[2], b[3], "rt"]])
       if (near(cx, cy, 12)) return `o:${i}:${k}`;
   }
+  for (let i = openings.length - 1; i >= 0; i--) {       // an opening's four edges, the corners having had first refusal
+    const b = obox(openings[i]);
+    const onY = p.y <= py(b[1]) + 9 && p.y >= py(b[3]) - 9, onX = p.x >= px(b[0]) - 9 && p.x <= px(b[2]) + 9;
+    if (onY && Math.abs(p.x - px(b[0])) <= 9) return `o:${i}:l.`;
+    if (onY && Math.abs(p.x - px(b[2])) <= 9) return `o:${i}:r.`;
+    if (onX && Math.abs(p.y - py(b[3])) <= 9) return `o:${i}:.t`;
+    if (onX && openings[i].kind !== "door" && Math.abs(p.y - py(b[1])) <= 9) return `o:${i}:.b`;
+  }
   if (near(L, H, 14)) return "w:c";
   if (near(L, 0, 14)) return "w:r";
   if (near(0, H, 14)) return "w:t";
+  if (Math.abs(p.x - px(L)) <= 9 && p.y <= py(0) + 9 && p.y >= py(H) - 9) return "w:r";   // the wall's right edge: its length
+  if (Math.abs(p.y - py(H)) <= 9 && p.x >= px(0) - 9 && p.x <= px(L) + 9) return "w:t";   // its top edge: its height
   for (let i = openings.length - 1; i >= 0; i--) {
     const b = obox(openings[i]);
     if (p.x >= px(b[0]) && p.x <= px(b[2]) && p.y <= py(b[1]) && p.y >= py(b[3])) return `o:${i}:move`;
@@ -322,7 +343,8 @@ function hit(p) {
   return null;
 }
 const CURSOR = { "w:r": "ew-resize", "w:t": "ns-resize", "w:c": "nwse-resize", lb: "nesw-resize", rb: "nwse-resize",
-  lt: "nwse-resize", rt: "nesw-resize", move: "move", x: "pointer" };
+  lt: "nwse-resize", rt: "nesw-resize", "l.": "ew-resize", "r.": "ew-resize", ".t": "ns-resize", ".b": "ns-resize",
+  move: "move", x: "pointer" };
 const at = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
 canvas.addEventListener("pointerdown", e => {
@@ -363,10 +385,11 @@ canvas.addEventListener("pointermove", e => {
       o.x = q(clamp(o0.x + dx, lo, Math.max(lo, hi - o.w)));
       if (o.kind !== "door") o.sill = q(clamp(o0.sill + dy, MINSILL, Math.max(MINSILL, top - o.h)));
     } else {
-      if (edge[0] === "l") { const x = q(clamp(o0.x + dx, lo, o0.x + o0.w - MINW)); o.w = q(o0.w + (o0.x - x)); o.x = x; }
-      else o.w = q(clamp(o0.w + dx, MINW, hi - o.x));
-      if (edge[1] === "t") o.h = q(clamp(o0.h + dy, o.kind === "door" ? 1.2 : MINH, top - sillOf(o)));
-      else if (o.kind !== "door") { const s = q(clamp(o0.sill + dy, MINSILL, o0.sill + o0.h - MINH)); o.h = q(o0.h - (s - o0.sill)); o.sill = s; }
+      const ex = edge[0], ey = edge[1];                  // a corner moves both, an edge only its own ("." = leave alone)
+      if (ex === "l") { const x = q(clamp(o0.x + dx, lo, o0.x + o0.w - MINW)); o.w = q(o0.w + (o0.x - x)); o.x = x; }
+      else if (ex === "r") o.w = q(clamp(o0.w + dx, MINW, hi - o.x));
+      if (ey === "t") o.h = q(clamp(o0.h + dy, o.kind === "door" ? 1.2 : MINH, top - sillOf(o)));
+      else if (ey === "b" && o.kind !== "door") { const s = q(clamp(o0.sill + dy, MINSILL, o0.sill + o0.h - MINH)); o.h = q(o0.h - (s - o0.sill)); o.sill = s; }
     }
   }
   fit(d);
@@ -397,6 +420,8 @@ $("script").addEventListener("change", e => { design.script = e.target.checked ?
 $("addDoor").addEventListener("click", () => addOpening("door"));
 $("addWindow").addEventListener("click", () => addOpening("window"));
 $("random").addEventListener("click", () => { design = randomDesign(); sel = -1; changed(); });
+if (ABOUT[modelId]) { $("about").textContent = ABOUT[modelId]; $("aboutLink").hidden = false; }
+$("aboutLink").addEventListener("click", e => { e.preventDefault(); $("about").hidden = !$("about").hidden; });
 addEventListener("resize", paint);
 if (window.ResizeObserver) new ResizeObserver(paint).observe(canvas);
 
