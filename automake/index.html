@@ -27,7 +27,18 @@ button:hover, select:hover { border-color: #bbb }
 #model { background-color: #111; border-color: #111; color: #fff;
   background-image: linear-gradient(45deg, transparent 50%, #fff 50%), linear-gradient(135deg, #fff 50%, transparent 50%) }
 :disabled { color: #ccc; border-color: #eee; cursor: default; background-image: none }
-button:focus-visible, select:focus-visible { outline: 2px solid #111; outline-offset: 2px }
+.sw { display: inline-flex; align-items: center; gap: 9px; padding: 0 4px; cursor: pointer;
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #c3c3be; -webkit-user-select: none; user-select: none }
+.sw.frame .t, .sw.block .b { color: #111 }
+#script { appearance: none; -webkit-appearance: none; position: relative; margin: 0; width: 50px; height: 30px; flex: none;
+  border-radius: 999px; background: #e2e2de; cursor: pointer; transition: background .15s ease }
+#script::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .15s ease }
+#script:checked { background: #111 }
+#script:checked::after { transform: translateX(20px) }
+.sw.off { opacity: .4; cursor: default }
+#script:disabled { cursor: default }
+button:focus-visible, select:focus-visible, #script:focus-visible { outline: 2px solid #111; outline-offset: 2px }
 footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .06em; padding: 10px 0 }
 @media (max-width: 620px) {
   body { padding-left: 12px; padding-right: 12px }
@@ -46,7 +57,7 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
     <div class="pills">
       <button id="addDoor" type="button">+ door</button>
       <button id="addWindow" type="button">+ window</button>
-      <select id="script" aria-label="What to build"><option value="frame">timber frame</option><option value="block">concrete blocks</option></select>
+      <label class="sw" id="sw"><span class="t">timber</span><input type="checkbox" id="script" aria-label="Build concrete blocks instead of a timber frame"><span class="b">blocks</span></label>
       <select id="model" aria-label="Which network"></select>
     </div>
   </div>

@@ -20,7 +20,6 @@ const DEFAULT_MODEL = "o1";
 // what the rulers and the dataset allow (metres)
 const LMIN = 1.2, LMAX = 7.9, HMIN = 2.0, HMAX = 3.15;
 const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3, MAXOPS = 4;
-const TRAIN = { L: [2.4, 6.0], H: [2.2, 2.8] };          // the walls the networks were trained on, hinted on the canvas
 
 const $ = id => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
@@ -205,7 +204,6 @@ function paint() {
   const { L, H, openings } = design;
   ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
   ctx.clearRect(0, 0, v.cw, v.ch);
-  frame([TRAIN.L[0], TRAIN.H[0], TRAIN.L[1], TRAIN.H[1]], [6, 6], "#efefec", 1);   // the training range, barely there
 
   for (const e of parts) {                               // what the network has written so far
     const [fill, stroke] = FILL[ITEMS[e[0]] === "block" ? "block" : ITEMS[e[0]] === "lintel" ? "lintel" : "timber"];
@@ -334,8 +332,9 @@ function sync() {
   const m = MODELS.find(m => m.id === modelId);
   $("caption").textContent = `${design.script === "block" ? "Concrete blocks" : "Timber frame"} · ${design.L.toFixed(2)} × ${design.H.toFixed(2)} m`;
   $("model").value = modelId;
-  $("script").value = design.script;
+  $("script").checked = design.script === "block";
   $("script").disabled = m.scripts.length < 2;
+  $("sw").className = `sw ${design.script}${m.scripts.length < 2 ? " off" : ""}`;
   $("addDoor").disabled = $("addWindow").disabled = design.openings.length >= MAXOPS || !freeSpan(design);
 }
 $("model").innerHTML = MODELS.map(m => `<option value="${m.id}">${m.label}</option>`).join("");
@@ -348,7 +347,7 @@ $("model").addEventListener("change", e => {
   parts = []; pending = []; hot = null; wantRun = true;
   writeHash(); sync(); paint(); loadModel();
 });
-$("script").addEventListener("change", e => { design.script = e.target.value; changed(); });
+$("script").addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
 $("addDoor").addEventListener("click", () => addOpening("door"));
 $("addWindow").addEventListener("click", () => addOpening("window"));
 addEventListener("resize", paint);
