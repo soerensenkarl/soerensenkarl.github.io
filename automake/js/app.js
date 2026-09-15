@@ -154,13 +154,13 @@ function loadModel() {
   window.__automake.loadStart = performance.now();
   worker.postMessage({ type: "load", url: new URL("../model/", import.meta.url).href, file: m.file, format: FORMAT,
     backend: qs.get("backend"), threads: qs.get("threads") });
-  status("loading weights…");
+  status("loading neural net…");
 }
 
 worker.onmessage = e => {
   const ev = e.data, m = MODELS.find(m => m.file === ev.file);
   if (ev.type === "progress") {
-    if (m && m.id === modelId) status(`loading weights · ${(ev.loaded / 1e6).toFixed(1)} of ${(ev.total / 1e6).toFixed(1)} MB`);
+    if (m && m.id === modelId) status(`loading neural net · ${(ev.loaded / 1e6).toFixed(1)} of ${(ev.total / 1e6).toFixed(1)} MB`);
     if (m && m.id === modelId) { $("load").hidden = false; $("load").firstElementChild.style.width = `${Math.min(100, 100 * ev.loaded / Math.max(1, ev.total))}%`; }
     return;
   }
