@@ -124,7 +124,8 @@ if (location.hash.length > 2) try {
     const val = s.slice(1).split("_").map(Number);
     return s[0] === "d" ? door(val[0], val[1], val[2]) : win(val[0], val[1], val[2], val[3]);
   });
-  design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops };
+  if (p.has("L") || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops };   // a link with only a network keeps the default wall (door and window)
+  else if (p.get("t") === "block") design.script = "block";
 } catch { /* keep the default wall */ }
 if (!MODELS.find(m => m.id === modelId).scripts.includes(design.script)) design.script = "frame";
 fit(design);
