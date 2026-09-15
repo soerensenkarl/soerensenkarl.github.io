@@ -113,11 +113,13 @@ function randomDesign() {
 // ---------------------------------------------------------------- the link, so a wall can be shared
 function writeHash() {
   const o = design.openings.map(o => o.kind === "door" ? `d${r3(o.x)}_${r3(o.w)}_${r3(o.h)}` : `w${r3(o.x)}_${r3(o.w)}_${r3(o.h)}_${r3(o.sill)}`).join("~");
-  history.replaceState(null, "", "#" + new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o }));
+  history.replaceState(null, "", "#" + new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o, ...(fixedNet ? { fix: 1 } : {}) }));
 }
+let fixedNet = false;                                    // fix=1 in the link: one network, its pill hidden (a separate artifact)
 if (location.hash.length > 2) try {
   const p = new URLSearchParams(location.hash.slice(1));
   if (MODELS.some(m => m.id === p.get("n"))) modelId = p.get("n");
+  if (p.get("fix") && MODELS.some(m => m.id === p.get("n"))) { fixedNet = true; document.getElementById("model").hidden = true; if (!MODELS.find(m => m.id === modelId).scripts.includes("block")) document.getElementById("sw").hidden = true; }
   const ops = (p.get("o") || "").split("~").filter(Boolean).map(s => {
     const val = s.slice(1).split("_").map(Number);
     return s[0] === "d" ? door(val[0], val[1], val[2]) : win(val[0], val[1], val[2], val[3]);
@@ -149,6 +151,7 @@ worker.onmessage = e => {
   const ev = e.data, m = MODELS.find(m => m.file === ev.file);
   if (ev.type === "progress") {
     if (m && m.id === modelId) status(`loading ${m.name} · ${(ev.loaded / 1e6).toFixed(1)} of ${(ev.total / 1e6).toFixed(1)} MB`);
+    if (m && m.id === modelId) { $("load").hidden = false; $("load").firstElementChild.style.width = `${Math.min(100, 100 * ev.loaded / Math.max(1, ev.total))}%`; }
     return;
   }
   if (ev.type === "ready") {
@@ -156,6 +159,7 @@ worker.onmessage = e => {
     ready = true;
     window.__automake.loads.push({ model: m.id, ms: performance.now() - window.__automake.loadStart, fetchMs: ev.fetchMs,
       parseMs: ev.parseMs, poolMs: ev.poolMs, helpers: ev.helpers, bytes: ev.bytes, backend: ev.backend });
+    $("load").hidden = true;
     if (wantRun) startRun(); else status(`${m.name} ready`);
     return;
   }
@@ -217,9 +221,28 @@ const mx = p => (p - v.ox) / v.s, my = p => (v.oy - p) / v.s;
 const obox = o => [o.x, sillOf(o), o.x + o.w, sillOf(o) + o.h];
 // an element [item, x0, y0, x1, y1] in 5 mm ticks as a box in metres from the wall's bottom-left corner
 const ebox = e => [e[1] * .005 - 4 + design.L / 2, e[2] * .005 - 1.6 + design.H / 2, e[3] * .005 - 4 + design.L / 2, e[4] * .005 - 1.6 + design.H / 2];
-const BLUE = "#0000ff";                                  // the outline on a part the moment the network writes it
+const BLUE = "#3b8cff";                                  // the outline on a part the moment the network writes it
 // bright amber timber, grey blocks: the only fills on the page
-const FILL = { block: ["#c9c9c9", "#6b6b6b"], lintel: ["#8d8d8d", "#3a3a3a"], timber: ["#ffb400", "#e05a00"] };   // punchy: amber timber, dark strokes
+const FILL = { block: ["#c9c9c9", "#6b6b6b"], lintel: ["#8d8d8d", "#3a3a3a"], timber: ["#e7c993", "#a67c48"] };   // pine, grey blocks
+function grain(x, y, w, h, seed) {                       // pine: a few faint grain streaks along the member, fixed per part
+  const along = w >= h, n = along ? h : w, len = along ? w : h;
+  if (n < 3 || len < 8) return;
+  let r = seed * 9301 + 49297;
+  const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.lineWidth = 1;
+  for (let k = 0, m = 2 + Math.floor(n / 4); k < m; k++) {
+    const off = (k + .5 + (rnd() - .5) * .8) * n / m, amp = .6 + rnd() * 1.2, ph = rnd() * 6.3, dark = .12 + rnd() * .16;
+    ctx.strokeStyle = `rgba(120,78,30,${dark})`; ctx.beginPath();
+    for (let t = 0; t <= len; t += 6) {
+      const wob = Math.sin(t / 40 + ph) * amp;
+      const px_ = along ? x + t : x + off + wob, py_ = along ? y + off + wob : y + t;
+      t ? ctx.lineTo(px_, py_) : ctx.moveTo(px_, py_);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 function frame(b, dash, colour, w) {                     // a rectangle in metres, drawn as a line
   ctx.save(); ctx.setLineDash(dash); ctx.strokeStyle = colour; ctx.lineWidth = w;
@@ -242,9 +265,10 @@ function paint() {
     const [fill, stroke] = FILL[ITEMS[e[0]] === "block" ? "block" : ITEMS[e[0]] === "lintel" ? "lintel" : "timber"];
     const b = ebox(e), x = px(b[0]), y = py(b[3]), w = Math.max(.7, v.s * (b[2] - b[0])), h = Math.max(.7, v.s * (b[3] - b[1]));
     ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
+    if (fill === FILL.timber[0]) grain(x, y, w, h, (e[1] * 7 + e[2] * 13 + e[3] * 3 + e[4]) % 1000);
     ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, Math.max(0, w - 1), Math.max(0, h - 1));
   }
-  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; frame(ebox(hot.e), [], BLUE, 3); ctx.restore(); }   // the part just written
+  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14; frame(ebox(hot.e), [], BLUE, 2.5); frame(ebox(hot.e), [], BLUE, 2.5); ctx.restore(); }   // a lit, glowing outline   // the part just written
 
   frame([0, 0, L, H], [1, 3], "#555", 1);                // the wall, and the three crosses that size it
   cross(0, 0, 7, false);

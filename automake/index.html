@@ -46,6 +46,7 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
   .bar { flex-direction: column; align-items: center; gap: 12px }
   .pills { justify-content: center }
 }
+#load{height:3px;width:220px;max-width:60vw;background:#e8e8e8;margin-top:8px;border-radius:2px;overflow:hidden}#load i{display:block;height:100%;width:0;background:#3b8cff;box-shadow:0 0 6px #6fb2ff;transition:width .15s}#load[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -53,7 +54,7 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
   <canvas id="canvas" tabindex="0" aria-label="The wall: drag the crosses at its corners, and its openings"></canvas>
   <p>A neural network writes the wall, part by part, in your browser. Drag the wall and its openings.</p>
   <div class="bar">
-    <div><div id="caption"></div><div id="status" role="status"></div></div>
+    <div><div id="caption"></div><div id="status" role="status"></div><div id="load" hidden><i></i></div></div>
     <div class="pills">
       <button id="addDoor" type="button">+ door</button>
       <button id="addWindow" type="button">+ window</button>
