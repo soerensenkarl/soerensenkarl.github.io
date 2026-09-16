@@ -17,7 +17,7 @@ const MODELS = [
   // networks are given load tokens, and only for them does the page draw, drag or link a load. (The network reads a
   // line load too; the page offers only the point-load array, which is what a wall is designed for.)
   // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x9) and change `file`.
-  { id: "x8", file: "x8", name: "X8", title: "Studs under loads", scripts: ["frame"], loads: true },
+  { id: "x8", file: "x8", name: "X8", title: "Designs with the forces", scripts: ["frame"], loads: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
@@ -40,12 +40,15 @@ const SNAP = 0.015, STUD = 0.6, SPSNAP = [0.6, 0.4], EXACT = 5e-4;
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
   o4: () => ({ script: "block", L: 5.23, H: 2.69, openings: [door(0.965, 0.9, 2.1), win(2.65, 0.89, 1.2, 0.59)] }),
-  x8: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
+  // picked by trying: web/tests/pick_wall.mjs ranked 16 candidates and this one has the studs closest to the arrows
+  // (85 mm mean, against 114 mm for the script's 600 mm grid on the same wall) with all three arrows over an opening
+  // carried on a header, ends studded, 23 parts
+  x8: () => ({ script: "frame", L: 4.8, H: 2.7, openings: [door(0.7, 0.9, 2.05), win(2.4, 1.2, 1.1, 0.9)],
                 off: 0.45, sp: 0.6 }),
 };
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  x8: "The framing network after nine rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It now frames every opening on every side and stands a stud at each end of the wall, carries the load over a door or a window on a header, and leaves nothing hanging – and was never told what a stud, a header or a jamb is. Runs entirely in your browser; nothing is sent anywhere.",
+  x8: "The framing network after nine rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it frames every opening on every side, stands a stud at each end of the wall, carries a load standing over a door or a window on a header, and leaves nothing hanging – and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
   o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
