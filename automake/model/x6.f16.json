@@ -1360,14 +1360,14 @@
    "dtype": "f16"
   }
  ],
- "name": "X4",
- "run": "X4_expert",
+ "name": "X6",
+ "run": "X6_expert",
  "params": 8765272,
  "trained": "2026-09-16",
  "exported": "2026-09-16",
- "commit": "35b5bf1",
+ "commit": "58ab95b",
  "script": "frame",
- "minutes": 15.0,
- "init": "data/mvp/exp/X3_from_x2.pt",
- "note": "expert iteration from data/mvp/exp/X3_from_x2.pt: the world's searched walls under point loads (data/mvp/expert_loads5.npz), plus plain script walls"
+ "minutes": 20.0,
+ "init": "data/mvp/exp/X5_expert.pt",
+ "note": "expert iteration from data/mvp/exp/X5_expert.pt: the world's searched walls under point loads (data/mvp/expert_loads7.npz), plus plain script walls"
 }

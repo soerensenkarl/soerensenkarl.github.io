@@ -15,8 +15,8 @@ const MODELS = [
     blurb: "The framing network, then 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted: no framing script or framing data in that stage." },
   // `loads: true` - the network reads the point loads on the wall's top edge (sequence.py TYPES index 4). Only these
   // networks are given load tokens, and only for them does the page draw, drag or link any load.
-  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x5) and change `file`.
-  { id: "x4", file: "x4", name: "X4", title: "Studs under loads", scripts: ["frame"], loads: true },
+  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x7) and change `file`.
+  { id: "x6", file: "x6", name: "X6", title: "Studs under loads", scripts: ["frame"], loads: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
@@ -32,11 +32,11 @@ const LEND = 0.2, LCLEAR = 0.15, LAPART = 0.4, MAXLOADS = 8;
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
   o4: () => ({ script: "block", L: 4.97, H: 2.63, openings: [door(1.12, 0.945, 2.0), win(2.625, 1.47, 1.115, 0.83)] }),
-  x4: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)], loads: [2.1, 4.6] }),
+  x6: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)], loads: [2.1, 4.6] }),
 };
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  x4: "The framing network after five rounds of learning from the world's physics alone: a search that only knows 'slide a box' improved walls under point loads by their strain energy, and the network learned to reproduce them. It puts a stud about 3 cm from the loads on walls it never saw, keeps the wall sheathable, keeps plain walls as the script frames them, and was never told what a stud is. Runs entirely in your browser; nothing is sent anywhere.",
+  x6: "The framing network after seven rounds of learning from the world's physics alone: a search that only knows 'slide a box' improved walls under point loads by their strain energy, and the network learned to reproduce them. It puts a stud about 2–3 cm from the loads on walls it never saw, keeps the wall sheathable, keeps plain walls as the script frames them, and was never told what a stud is. Runs entirely in your browser; nothing is sent anywhere.",
   o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
