@@ -661,10 +661,10 @@ function sync() {
     if (m.scripts.length < 2) sw.remove();
     else { $("script").checked = design.script === "block"; sw.className = `sw ${design.script}`; }
   }
-  $("addDoor").disabled = $("addWindow").disabled = design.openings.length >= MAXOPS || !freeSpan(design);
+  $("addDoor").hidden = $("addWindow").hidden = design.openings.length >= MAXOPS || !freeSpan(design);   // a control that cannot act is absent
   const bl = $("addLoad"), bn = $("addLine");             // only a network that reads loads has these buttons at all
-  if (bl) { if (!m.loads) bl.remove(); else bl.disabled = loadSpot(design) === null; }
-  if (bn) { if (!m.loads) bn.remove(); else bn.disabled = lineSpot(design) === null; }
+  if (bl) { if (!m.loads) bl.remove(); else bl.hidden = loadSpot(design) === null; }
+  if (bn) { if (!m.loads) bn.remove(); else bn.hidden = lineSpot(design) === null; }
 }
 $("script")?.addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
 $("addDoor").addEventListener("click", () => { selL = selN = -1; addOpening("door"); });
