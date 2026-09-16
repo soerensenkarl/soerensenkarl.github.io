@@ -31,6 +31,10 @@ const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3,
 // they fall there. The standard is the data's own 600 mm line.
 const LEND = 0.2, SPDEF = 0.6, OFFDEF = 0.3, SPMIN = 0.3, SPMAX = 2.4, MAXLOADS = 16;
 const SPACINGS = [0.4, 0.6, 0.6, 0.6, 0.9, 1.2];         // what "random" draws the interval from
+// the magnet: 15 mm either side of a value the trade builds to, and nothing outside that window. The interval holds at
+// the 600 mm line and at 400; the offset holds where an arrow stands on a stud of the script's 600 mm grid from the
+// left end of the wall (0 mod 0.6) and where it stands exactly halfway between two of them (0.3 mod 0.6).
+const SNAP = 0.015, STUD = 0.6, SPSNAP = [0.6, 0.4], EXACT = 5e-4;
 
 // what each artifact opens with, and what it says about itself
 const WALLS = {
@@ -49,6 +53,17 @@ const $ = id => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 const q = v => Math.round(v / 0.005) * 0.005;            // the 5 mm ruler the network writes on
 const r3 = v => Number(v.toFixed(3));
+// the nearest of `targets` within the window, or the value untouched: a number outside the window passes through freely
+const magnet = (v, targets) => {
+  let best = null;
+  for (const t of targets) if (Math.abs(v - t) <= SNAP && (best === null || Math.abs(v - t) < Math.abs(v - best))) best = t;
+  return best === null ? q(v) : best;
+};
+const offTargets = v => [Math.round(v / STUD) * STUD, Math.round((v - STUD / 2) / STUD) * STUD + STUD / 2];
+const modDist = (v, phase) => { const r = (((v - phase) % STUD) + STUD) % STUD; return Math.min(r, STUD - r); };
+// whether the array as it ended up is held by the magnet - asked of the laid-out design, so the mark never lies
+const offHeld = d => modDist(d.off, 0) < EXACT || modDist(d.off, STUD / 2) < EXACT;
+const spHeld = d => SPSNAP.some(t => Math.abs(d.sp - t) < EXACT);
 
 // ---------------------------------------------------------------- the design and its rules
 const door = (x, w, h) => ({ kind: "door", x, w, h, sill: 0 });
@@ -188,7 +203,7 @@ if (!MODELS.find(m => m.id === modelId).scripts.includes(design.script)) design.
 fit(design);
 
 // ---------------------------------------------------------------- state
-let sel = -1, hover = null, drag = null;
+let sel = -1, hover = null, drag = null, held = null;    // `held`: "sp" or "off" while the magnet holds this drag
 let scene = null, obs = [], parts = [], pending = [], hot = null;
 let runId = 1, timer = null, ready = false, wantRun = true;
 window.__automake = { loads: [], runs: [] };
@@ -321,6 +336,35 @@ function arrow(X, yTail, yTip, head) {
   ctx.beginPath(); ctx.moveTo(X, yTail); ctx.lineTo(X, yTip - 3); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(X, yTip + 5); ctx.lineTo(X - head, yTip - 5); ctx.lineTo(X + head, yTip - 5); ctx.closePath(); ctx.fill();
 }
+// the interval between the first two arrows, dimensioned the way a drawing dimensions it: a thin line with tick ends
+// just above the load line and the number of millimetres in a gap at its middle. While the magnet holds the drag, the
+// number goes blue for an interval and the ticks for an offset - the arrow standing on a stud line is the tick's own end.
+function drawDim(d, held) {
+  if (d.loads.length < 2) return;
+  const x0 = px(d.loads[0]), x1 = px(d.loads[1]), y = Math.max(11, py(d.H + LARROW) - 16), mid = (x0 + x1) / 2;
+  const txt = String(Math.round((d.loads[1] - d.loads[0]) * 1000));
+  ctx.save();
+  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  if ("letterSpacing" in ctx) ctx.letterSpacing = "1.4px";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 1;
+  const w = ctx.measureText(txt).width + 9, gap = x1 - x0 > w + 10;
+  ctx.strokeStyle = held === "off" ? BLUE : "#111";      // the ends of the dimension are the two arrows
+  ctx.beginPath();
+  ctx.moveTo(x0 + .5, y - 4); ctx.lineTo(x0 + .5, y + 4);
+  ctx.moveTo(x1 + .5, y - 4); ctx.lineTo(x1 + .5, y + 4);
+  ctx.stroke();
+  ctx.strokeStyle = "#111";
+  ctx.beginPath();
+  if (gap) { ctx.moveTo(x0, y + .5); ctx.lineTo(mid - w / 2, y + .5); ctx.moveTo(mid + w / 2, y + .5); ctx.lineTo(x1, y + .5); }
+  else { ctx.moveTo(x0, y + .5); ctx.lineTo(x1, y + .5); }
+  ctx.stroke();
+  ctx.fillStyle = held === "sp" ? BLUE : "#111";
+  ctx.textBaseline = gap ? "middle" : "bottom";
+  ctx.fillText(txt, mid, gap ? y : y - 5);
+  ctx.restore();
+}
+
 function drawLoads(d, on) {
   const yTail = py(d.H + LARROW), yTip = py(d.H + LFOOT);
   ctx.save();
@@ -347,7 +391,7 @@ function paint() {
   }
   if (hot) { ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14; frame(ebox(hot.e), [], BLUE, 2.5); frame(ebox(hot.e), [], BLUE, 2.5); ctx.restore(); }   // a lit, glowing outline   // the part just written
 
-  if (readsLoads()) drawLoads(design, (hover || "")[0] === "l");
+  if (readsLoads()) { drawLoads(design, (hover || "")[0] === "l"); drawDim(design, held); }
 
   frame([0, 0, L, H], [1, 3], "#555", 1);                // the wall, and the three crosses that size it
   cross(0, 0, 7, false);
@@ -452,8 +496,8 @@ canvas.addEventListener("pointermove", e => {
   const O = drag.d0, d = design, h = drag.h.split(":"), edge = h[h.length - 1];
   if (h[0] === "l") {                                    // the line shifts the whole array; an arrow sets the interval,
     const k = h.length > 1 ? +h[1] : 0;                  // following the cursor while the first arrow stays put
-    if (k === 0) d.off = O.off + dx;
-    else { d.off = O.off; d.sp = clamp(q((mx(p.x) - O.off) / k), SPMIN, SPMAX); }   // wrapping keeps that arrow in the array
+    if (k === 0) { const raw = O.off + dx; d.off = magnet(raw, offTargets(raw)); }
+    else { d.off = O.off; d.sp = clamp(magnet((mx(p.x) - O.off) / k, SPSNAP), SPMIN, SPMAX); }   // wrapping keeps that arrow in the array
   } else if (h[0] === "w") {
     if (edge !== "t") d.L = clamp(q(O.L + dx), minLength(d.openings), LMAX);
     if (edge !== "r") d.H = clamp(q(O.H + dy), minHeight(d.openings), HMAX);
@@ -475,10 +519,11 @@ canvas.addEventListener("pointermove", e => {
     }
   }
   fit(d);
+  held = h[0] !== "l" ? null : +(h[1] || 0) ? (spHeld(d) ? "sp" : null) : (offHeld(d) ? "off" : null);
   changed();
 });
 
-const stop = e => { if (drag) { drag = null; try { canvas.releasePointerCapture(e.pointerId); } catch {} writeHash(); paint(); } };
+const stop = e => { if (drag) { drag = held = null; try { canvas.releasePointerCapture(e.pointerId); } catch {} writeHash(); paint(); } };
 canvas.addEventListener("pointerup", stop);
 canvas.addEventListener("pointercancel", stop);
 canvas.addEventListener("pointerleave", () => { if (!drag && hover) { hover = null; canvas.style.cursor = "default"; paint(); } });
