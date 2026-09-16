@@ -7,7 +7,7 @@
 // or with ?backend=js.
 //
 // in:  {type: "load", url, file, format, backend, threads}  -> {type: "progress", loaded, total} ..., {type: "ready", backend, ...}
-//      {type: "run", id, wall, ops, start, brief, reject, loads} -> {type: "encode"|"encoded"|"part"|"pass", id, ...}, {type: "done", id, ...}
+//      {type: "run", id, wall, ops, start, brief, reject, loads (segments)} -> {type: "encode"|"encoded"|"part"|"pass", id, ...}, {type: "done", id, ...}
 //      {type: "cancel"}
 import { M0, PROF, profReset } from "./model.js";
 import { EncoderPool } from "./pool.js";

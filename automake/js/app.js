@@ -13,10 +13,10 @@ const FORMAT = qs.get("format") || "f16";
 const MODELS = [
   { id: "o4", file: "o4", name: "O4", title: "Frames, then blocks", scripts: ["frame", "block"],
     blurb: "The framing network, then 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted: no framing script or framing data in that stage." },
-  // `loads: true` - the network reads the point loads on the wall's top edge (sequence.py TYPES index 4). Only these
-  // networks are given load tokens, and only for them does the page draw, drag or link any load.
-  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x7) and change `file`.
-  { id: "x6", file: "x6", name: "X6", title: "Studs under loads", scripts: ["frame"], loads: true },
+  // `loads: true` - the network reads the loads on the wall's top edge (sequence.py TYPES index 4), point and line
+  // alike. Only these networks are given load tokens, and only for them does the page draw, drag or link any load.
+  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x9) and change `file`.
+  { id: "x8", file: "x8", name: "X8", title: "Studs under loads", scripts: ["frame"], loads: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
@@ -25,18 +25,23 @@ const DEFAULT_MODEL = "o4";
 // what the rulers and the dataset allow (metres)
 const LMIN = 1.2, LMAX = 7.9, HMIN = 2.0, HMAX = 3.15;
 const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3, MAXOPS = 4;
-// point loads on the top edge (automake/mvp/dataset.py: LOAD_CLEAR_END, LOAD_CLEAR_OPENING, load_random's 0.4 m)
-const LEND = 0.2, LCLEAR = 0.15, LAPART = 0.4, MAXLOADS = 8;
+// loads on the top edge (automake/mvp/dataset.py: LOAD_CLEAR_END, LOAD_SPACING, load_grid). A point load (10 kN)
+// stands at one x, over an opening if you like, and `+ load` lays them out as the same regular 600 mm line the data
+// uses, from GRID0; a line load (10 kN/m) spans LINEMIN to LINEMAX of the edge and keeps LLCLEAR clear of every
+// point load.
+const LEND = 0.2, LAPART = 0.4, LGRID = 0.6, GRID0 = 0.3, MAXLOADS = 16;
+const LLCLEAR = 0.2, LINEMIN = 0.6, LINEMAX = 2.4, LINEDEF = 1.2, MAXLINES = 4;
 
 // what each artifact opens with, and what it says about itself
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
   o4: () => ({ script: "block", L: 4.97, H: 2.63, openings: [door(1.12, 0.945, 2.0), win(2.625, 1.47, 1.115, 0.83)] }),
-  x6: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)], loads: [2.1, 4.6] }),
+  x8: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
+                loads: [0.45, 1.05, 1.65, 2.25, 2.85, 3.45, 4.05, 4.65] }),
 };
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  x6: "The framing network after seven rounds of learning from the world's physics alone: a search that only knows 'slide a box' improved walls under point loads by their strain energy, and the network learned to reproduce them. It puts a stud about 2–3 cm from the loads on walls it never saw, keeps the wall sheathable, keeps plain walls as the script frames them, and was never told what a stud is. Runs entirely in your browser; nothing is sent anywhere.",
+  x8: "The framing network after nine rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It now frames every opening on every side and stands a stud at each end of the wall, carries the load over a door or a window on a header, reads a line load (a blue bar) as well as a point load, and leaves nothing hanging – and was never told what a stud, a header or a jamb is. Runs entirely in your browser; nothing is sent anywhere.",
   o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
@@ -73,20 +78,19 @@ function fit(d) {
   for (let i = d.openings.length - 1; i >= 0; i--) { const o = d.openings[i]; if (o.x + o.w > lim + 1e-9) o.x = q(lim - o.w); lim = o.x - GAP; }
   for (const o of d.openings) { o.x = r3(clamp(o.x, SIDE, Math.max(SIDE, d.L - SIDE - o.w))); o.w = r3(o.w); o.h = r3(o.h); o.sill = r3(o.sill); }
   d.L = r3(d.L); d.H = r3(d.H);
-  return fitLoads(d);
+  return fitLines(fitLoads(d));
 }
 
-// ---------------------------------------------------------------- the point loads on the top edge
+// ---------------------------------------------------------------- the loads on the top edge
 // Only a network built with them reads loads; for the others the page has none at all.
 const readsLoads = () => !!MODELS.find(m => m.id === modelId).loads;
 const qUp = v => Math.ceil(v / 0.005 - 1e-9) * 0.005, qDn = v => Math.floor(v / 0.005 + 1e-9) * 0.005;
 
-// the stretches of top edge a load may sit on: LEND from each end, LCLEAR clear of every opening
-function loadBands(d) {
+// the top edge LEND from each end, with `blocks` cut out of it
+function edgeBands(d, blocks) {
   const out = [];
   let a = LEND;
-  for (const o of d.openings) {
-    const lo = o.x - LCLEAR, hi = o.x + o.w + LCLEAR;
+  for (const [lo, hi] of [...blocks].sort((p, r) => p[0] - r[0])) {
     if (hi <= a) { a = Math.max(a, hi); continue; }
     if (lo > a) out.push([a, lo]);
     a = hi;
@@ -94,6 +98,10 @@ function loadBands(d) {
   out.push([a, d.L - LEND]);
   return out.map(([lo, hi]) => [qUp(Math.max(lo, LEND)), qDn(Math.min(hi, d.L - LEND))]).filter(b => b[1] >= b[0] - 1e-9);
 }
+// where a point load may stand: clear of the line loads (an opening below it no longer matters)
+const loadBands = d => edgeBands(d, (d.lines || []).map(s => [s[0] - LLCLEAR, s[1] + LLCLEAR]));
+// where a line load may lie: clear of the point loads and of the line loads `others`
+const lineBands = (d, others) => edgeBands(d, [...(d.loads || []).map(v => [v - LLCLEAR, v + LLCLEAR]), ...others]);
 
 const snapTo = (x, bands) => {                           // the nearest allowed x, null when there is nowhere to go
   let best = null, bd = Infinity;
@@ -118,16 +126,15 @@ function fitLoads(d) {
   return d;
 }
 
-function loadSpot(d) {                                   // where a new load would go: furthest from the ones there
+// where the next load goes: the next place on the 600 mm line, GRID0 from the left end and then LGRID to the right of
+// the rightmost load there (dataset.load_grid). Null when the line has run off the wall or a line load holds every
+// place left - the button is then gone, never greyed.
+function loadSpot(d) {
   if (d.loads.length >= MAXLOADS) return null;
-  let best = null, bd = -1;
-  for (const [a, b] of loadBands(d)) {
-    for (let x = a; x <= b + 1e-9; x = q(x + 0.05)) {
-      const far = d.loads.length ? Math.min(...d.loads.map(v => Math.abs(v - x))) : Math.min(x - a, b - x) + 1e3;
-      if (far > bd + 1e-9) { bd = far; best = q(x); }
-    }
-  }
-  return best !== null && (!d.loads.length || bd >= LAPART - 1e-9) ? best : null;
+  const bands = loadBands(d);
+  for (let x = q(d.loads.length ? d.loads[d.loads.length - 1] + LGRID : GRID0); x <= d.L - LEND + 1e-9; x = q(x + LGRID))
+    if (x >= LEND - 1e-9 && bands.some(([a, b]) => x >= a - 1e-9 && x <= b + 1e-9)) return r3(x);
+  return null;
 }
 
 function addLoad() {
@@ -136,12 +143,52 @@ function addLoad() {
   design.loads.push(x);
   fit(design);
   selL = design.loads.indexOf(r3(x));
-  sel = -1;
+  sel = selN = -1;
   changed();
 }
 
-// the loads as the network reads them: x in the wall frame (dataset.loads_in_wall_frame)
-const loadsInWallFrame = d => (readsLoads() ? d.loads : []).map(v => v - d.L / 2);
+// line loads on the 5 mm ruler, each in a stretch clear of the point loads and of the lines before it, LINEMIN to
+// LINEMAX long; one with no room left is dropped
+function fitLines(d) {
+  if (!readsLoads()) { d.lines = []; return d; }
+  const out = [];
+  for (const s of (d.lines || []).slice(0, MAXLINES).sort((a, b) => a[0] - b[0])) {
+    const len = clamp(q(s[1] - s[0]), LINEMIN, LINEMAX);
+    let best = null, bd = Infinity;
+    for (const [a, b] of lineBands(d, out)) {
+      if (b - a < LINEMIN - 1e-9) continue;
+      const l = Math.min(len, qDn(b - a)), x = clamp(q(s[0]), a, qDn(b - l)), e = Math.abs(x - s[0]);
+      if (e < bd) { bd = e; best = [r3(x), r3(x + l)]; }
+    }
+    if (best) out.push(best);
+  }
+  d.lines = out;
+  return d;
+}
+
+function lineSpot(d) {                                   // where a new line load would go: the widest stretch left
+  if ((d.lines || []).length >= MAXLINES) return null;
+  let best = null;
+  for (const b of lineBands(d, d.lines || [])) if (b[1] - b[0] >= LINEMIN - 1e-9 && (!best || b[1] - b[0] > best[1] - best[0])) best = b;
+  if (!best) return null;
+  const l = Math.min(LINEDEF, qDn(best[1] - best[0])), x = q(best[0] + (best[1] - best[0] - l) / 2);
+  return [r3(x), r3(x + l)];
+}
+
+function addLine() {
+  const s = lineSpot(design);
+  if (!s) return;
+  design.lines.push(s);
+  fit(design);
+  selN = design.lines.findIndex(t => t[0] === s[0]);
+  sel = selL = -1;
+  changed();
+}
+
+// the loads as the network reads them: one segment [x0, x1] each in the wall frame, a point load being x0 = x1
+// (dataset.loads_in_wall_frame); point loads first, then the line loads, as sequence.load_rects stacks them
+const loadSegs = d => (readsLoads() ? [...d.loads.map(v => [v, v]), ...(d.lines || [])] : [])
+  .map(s => [s[0] - d.L / 2, s[1] - d.L / 2]);
 
 function freeSpan(d) {                                   // the widest stretch of bare wall, for a new opening
   const edges = [[SIDE - GAP, SIDE], ...d.openings.map(o => [o.x, o.x + o.w]), [d.L - SIDE, d.L - SIDE + GAP]];
@@ -192,19 +239,20 @@ function randomDesign() {
     const slack = ops.map(() => U(0, spare)).sort((a, b) => a - b);
     let a = SIDE, used = 0;
     ops.forEach((o, i) => { a += slack[i] - used; used = slack[i]; o.x = q(a); a += o.w + GAP; });
-    const d = fit({ script: design.script, L, H, openings: ops, loads: [] });
-    if (readsLoads()) {                                                 // 1 to 3 loads, as dataset.load_random draws them
-      for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) {
-        const bands = loadBands(d);
-        if (!bands.length) break;
-        const span = bands.reduce((s, b) => s + (b[1] - b[0]), 0);
-        let t = Math.random() * span, x = null;
-        for (const [lo, hi] of bands) { if (t <= hi - lo) { x = q(lo + t); break; } t -= hi - lo; }
-        if (x === null) break;
-        if (d.loads.some(v => Math.abs(v - x) < LAPART)) continue;
-        d.loads.push(x);
-        fitLoads(d);
+    const d = fit({ script: design.script, L, H, openings: ops, loads: [], lines: [] });
+    if (readsLoads()) {                  // the 600 mm line from a random offset (dataset.load_grid), now and then
+      if (Math.random() < 0.3) {         // under a line load, as the "mixed" sampler draws one (dataset.line_random)
+        const w = q(U(LINEMIN, LINEMAX));
+        const room = lineBands(d, []).filter(b => b[1] - b[0] >= w - 1e-9);
+        if (room.length) {
+          const b = room[Math.floor(Math.random() * room.length)], x = q(U(b[0], b[1] - w));
+          d.lines = [[r3(x), r3(x + w)]];
+        }
       }
+      const bands = loadBands(d);
+      for (let x = q(U(0.1, 0.5)); x <= d.L - LEND + 1e-9 && d.loads.length < MAXLOADS; x = q(x + LGRID))
+        if (x >= LEND - 1e-9 && bands.some(([a, b]) => x >= a - 1e-9 && x <= b + 1e-9)) d.loads.push(r3(x));
+      fit(d);
     }
     return d;
   }
@@ -213,9 +261,12 @@ function randomDesign() {
 // ---------------------------------------------------------------- the link, so a wall can be shared
 function writeHash() {
   const o = design.openings.map(o => o.kind === "door" ? `d${r3(o.x)}_${r3(o.w)}_${r3(o.h)}` : `w${r3(o.x)}_${r3(o.w)}_${r3(o.h)}_${r3(o.sill)}`).join("~");
-  const p = { n: modelId, t: design.script, L: design.L, H: design.H, o };
-  if (readsLoads()) p.l = design.loads.map(r3).join("_");                // metres from the wall's left end
-  history.replaceState(null, "", "#" + new URLSearchParams(p));
+  const p = new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o });
+  if (readsLoads()) {                                    // metres from the wall's left end: point loads `l`, line loads `q`
+    p.set("l", design.loads.map(r3).join("_"));
+    if (design.lines.length) p.set("q", design.lines.map(s => `${r3(s[0])}-${r3(s[1])}`).join("~"));
+  }
+  history.replaceState(null, "", "#" + p);
 }
 if (location.hash.length > 2) try {
   const p = new URLSearchParams(location.hash.slice(1));
@@ -225,15 +276,17 @@ if (location.hash.length > 2) try {
     const val = s.slice(1).split("_").map(Number);
     return s[0] === "d" ? door(val[0], val[1], val[2]) : win(val[0], val[1], val[2], val[3]);
   });
-  if (p.has("L") || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops, loads: [] };   // a link with only a network keeps that artifact's wall
+  const len = p.get("L");
+  if (len !== null || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +len || 5.8, H: +p.get("H") || 2.7, openings: ops, loads: [], lines: [] };   // a link with only a network keeps that artifact's wall
   else if (p.has("t")) design.script = p.get("t") === "block" ? "block" : "frame";
   if (p.has("l")) design.loads = (p.get("l") || "").split("_").filter(Boolean).map(Number).filter(v => isFinite(v));
+  if (p.has("q")) design.lines = p.get("q").split("~").filter(Boolean).map(v => v.split("-").map(Number)).filter(s => s.length === 2 && s.every(isFinite));
 } catch { /* keep the default wall */ }
 if (!MODELS.find(m => m.id === modelId).scripts.includes(design.script)) design.script = "frame";
 fit(design);
 
 // ---------------------------------------------------------------- state
-let sel = -1, selL = -1, hover = null, drag = null;
+let sel = -1, selL = -1, selN = -1, hover = null, drag = null;
 let scene = null, obs = [], parts = [], pending = [], hot = null;
 let runId = 1, timer = null, ready = false, wantRun = true;
 window.__automake = { loads: [], runs: [] };
@@ -288,7 +341,7 @@ function startRun() {
   obs = scene.ops.map(r => r.slice());
   parts = []; pending = []; hot = null;
   worker.postMessage({ type: "run", id: runId, wall: scene.wall, ops: scene.ops, start: [], brief: BRIEFS[design.script],
-    reject: true, loads: loadsInWallFrame(design) });
+    reject: true, loads: loadSegs(design) });
   status("writing…");
   tick();
 }
@@ -359,21 +412,43 @@ function cross(x, y, r, on) {                            // the CAD corner mark,
   ctx.moveTo(px(x), py(y) - r); ctx.lineTo(px(x), py(y) + r); ctx.stroke();
 }
 
-// a point load: a blue arrow standing on the wall's top edge at its x, pointing down
-const LARROW = 0.30, LFOOT = 0.045;                      // metres above the top edge: the tail, and the tip
+// a point load: a blue arrow standing on the wall's top edge at its x, pointing down. A line load: a bar above the edge
+// over the stretch it covers, with a small arrow every LSTEP along it.
+const LARROW = 0.30, LFOOT = 0.045, LSTEP = 0.2;         // metres above the top edge: the tail, the tip; the arrow spacing
+function arrow(X, yTail, yTip, head) {
+  ctx.beginPath(); ctx.moveTo(X, yTail); ctx.lineTo(X, yTip - 3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(X, yTip + 5); ctx.lineTo(X - head, yTip - 5); ctx.lineTo(X + head, yTip - 5); ctx.closePath(); ctx.fill();
+}
+function del(X, Y, lit) {                                // the × that removes a load
+  ctx.lineWidth = lit ? 2 : 1;
+  ctx.strokeStyle = lit ? "#000" : "#9ab";
+  ctx.beginPath(); ctx.moveTo(X - 4, Y - 4); ctx.lineTo(X + 4, Y + 4); ctx.moveTo(X + 4, Y - 4); ctx.lineTo(X - 4, Y + 4); ctx.stroke();
+}
 function drawLoad(x, H, i, on) {
-  const X = px(x), yTail = py(H + LARROW), yTip = py(H + LFOOT);
   ctx.save();
   ctx.strokeStyle = ctx.fillStyle = on ? "#1668d8" : BLUE;
   ctx.lineWidth = on ? 2.4 : 1.6;
-  ctx.beginPath(); ctx.moveTo(X, yTail); ctx.lineTo(X, yTip - 3); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(X, yTip + 5); ctx.lineTo(X - 4.5, yTip - 5); ctx.lineTo(X + 4.5, yTip - 5); ctx.closePath(); ctx.fill();
-  if (on) {                                              // the x that removes it
-    const dx = X + 14, dy = py(H + LARROW) + 5;
-    const lit = hover === `l:${i}:x`;
-    ctx.lineWidth = lit ? 2 : 1;
-    ctx.strokeStyle = lit ? "#000" : "#9ab";
-    ctx.beginPath(); ctx.moveTo(dx - 4, dy - 4); ctx.lineTo(dx + 4, dy + 4); ctx.moveTo(dx + 4, dy - 4); ctx.lineTo(dx - 4, dy + 4); ctx.stroke();
+  arrow(px(x), py(H + LARROW), py(H + LFOOT), 4.5);
+  if (on) del(px(x) + 14, py(H + LARROW) + 5, hover === `l:${i}:x`);
+  ctx.restore();
+}
+function drawLine(s, H, i, on) {
+  const a = px(s[0]), b = px(s[1]), yTail = py(H + LARROW), yTip = py(H + LFOOT);
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = on ? "#1668d8" : BLUE;
+  ctx.lineWidth = on ? 2.4 : 1.6;
+  ctx.beginPath(); ctx.moveTo(a, yTail); ctx.lineTo(b, yTail); ctx.stroke();
+  ctx.lineWidth = 1.1;
+  const n = Math.max(1, Math.round((s[1] - s[0]) / LSTEP));
+  for (let k = 0; k <= n; k++) arrow(a + (b - a) * k / n, yTail, yTip, 3.5);
+  if (on) {                                              // a handle at each end, to stretch it
+    [a, b].forEach((X, k) => {
+      const lit = hover === `n:${i}:${k}`;
+      ctx.lineWidth = lit ? 2 : 1.4;
+      ctx.fillStyle = lit ? "#1668d8" : "#fff";
+      ctx.beginPath(); ctx.rect(X - 3.5, yTail - 3.5, 7, 7); ctx.fill(); ctx.stroke();
+    });
+    del(b + 15, yTail + 5, hover === `n:${i}:x`);
   }
   ctx.restore();
 }
@@ -393,7 +468,9 @@ function paint() {
   }
   if (hot) { ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14; frame(ebox(hot.e), [], BLUE, 2.5); frame(ebox(hot.e), [], BLUE, 2.5); ctx.restore(); }   // a lit, glowing outline   // the part just written
 
-  (design.loads || []).forEach((x, i) => drawLoad(x, H, i, selL === i || hover === `l:${i}` || hover === `l:${i}:x`));
+  const lit = (k, i) => hover === `${k}:${i}` || (hover || "").startsWith(`${k}:${i}:`);
+  (design.loads || []).forEach((x, i) => drawLoad(x, H, i, selL === i || lit("l", i)));
+  (design.lines || []).forEach((s, i) => drawLine(s, H, i, selN === i || lit("n", i)));
 
   frame([0, 0, L, H], [1, 3], "#555", 1);                // the wall, and the three crosses that size it
   cross(0, 0, 7, false);
@@ -437,6 +514,15 @@ function hit(p) {
     if (selL === i && Math.abs(p.x - px(loads[i]) - 14) <= 10 && Math.abs(p.y - py(H + LARROW) - 5) <= 10) return `l:${i}:x`;
     if (Math.abs(p.x - px(loads[i])) <= 11 && p.y >= py(H + LARROW) - 8 && p.y <= py(H + LFOOT) + 5) return `l:${i}`;
   }
+  const lines = design.lines || [];                      // a line load: its × and its two end handles, then its bar
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const a = px(lines[i][0]), b = px(lines[i][1]), yb = py(H + LARROW);
+    if (selN === i && Math.abs(p.x - b - 15) <= 10 && Math.abs(p.y - yb - 5) <= 10) return `n:${i}:x`;
+    if (p.y < yb - 9 || p.y > py(H + LFOOT) + 5) continue;
+    if (Math.abs(p.x - a) <= 8) return `n:${i}:0`;
+    if (Math.abs(p.x - b) <= 8) return `n:${i}:1`;
+    if (p.x > a && p.x < b) return `n:${i}`;
+  }
   for (let i = openings.length - 1; i >= 0; i--) {
     const b = obox(openings[i]);
     if (sel === i && Math.abs(p.x - px(b[2]) - 15) <= 11 && Math.abs(p.y - py(b[3]) + 15) <= 11) return `o:${i}:x`;
@@ -464,8 +550,9 @@ function hit(p) {
 }
 const CURSOR = { "w:r": "ew-resize", "w:t": "ns-resize", "w:c": "nwse-resize", lb: "nesw-resize", rb: "nwse-resize",
   lt: "nwse-resize", rt: "nesw-resize", "l.": "ew-resize", "r.": "ew-resize", ".t": "ns-resize", ".b": "ns-resize",
-  move: "move", x: "pointer" };
-const cursorFor = h => !h ? "default" : (CURSOR[h] || CURSOR[h.split(":")[2]] || (h.startsWith("l:") ? "ew-resize" : "default"));
+  move: "move", x: "pointer", 0: "ew-resize", 1: "ew-resize" };
+const cursorFor = h => !h ? "default"
+  : (CURSOR[h] || CURSOR[h.split(":")[2]] || (h.startsWith("l:") ? "ew-resize" : h.startsWith("n:") ? "move" : "default"));
 const at = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
 canvas.addEventListener("pointerdown", e => {
@@ -474,12 +561,16 @@ canvas.addEventListener("pointerdown", e => {
   if (h && h.startsWith("l:")) {
     const [, i, edge] = h.split(":");
     if (edge === "x") { design.loads.splice(+i, 1); selL = -1; fit(design); changed(); return; }
-    selL = +i; sel = -1;
+    selL = +i; sel = selN = -1;
+  } else if (h && h.startsWith("n:")) {
+    const [, i, edge] = h.split(":");
+    if (edge === "x") { design.lines.splice(+i, 1); selN = -1; fit(design); changed(); return; }
+    selN = +i; sel = selL = -1;
   } else if (h && h.startsWith("o:")) {
     const [, i, edge] = h.split(":");
     if (edge === "x") { design.openings.splice(+i, 1); sel = -1; fit(design); changed(); return; }
-    sel = +i; selL = -1;
-  } else if (!h) { sel = -1; selL = -1; }
+    sel = +i; selL = selN = -1;
+  } else if (!h) { sel = selL = selN = -1; }
   if (!h) { paint(); return; }
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
@@ -505,6 +596,23 @@ canvas.addEventListener("pointermove", e => {
     const v = snapTo(q(O.loads[i] + dx), bands);
     if (v === null) return;
     d.loads[i] = r3(v);
+  } else if (h[0] === "n") {                             // a line load slides as a whole, or stretches by one end
+    const i = +h[1], s0 = O.lines[i];
+    if (!s0 || !d.lines[i]) return;
+    const gaps = lineBands(d, d.lines.filter((_, k) => k !== i));
+    if (h.length < 3) {
+      const len = s0[1] - s0[0];
+      const bs = gaps.map(g => [g[0], qDn(g[1] - len)]).filter(g => g[1] >= g[0] - 1e-9);
+      const x = snapTo(q(s0[0] + dx), bs);
+      if (x === null) return;
+      d.lines[i] = [r3(x), r3(x + len)];
+    } else {
+      const k = +h[2], end = s0[1 - k], g = gaps.find(g => end >= g[0] - 1e-9 && end <= g[1] + 1e-9);
+      if (!g) return;
+      const x = k ? clamp(q(s0[1] + dx), end + LINEMIN, Math.min(end + LINEMAX, g[1]))
+                  : clamp(q(s0[0] + dx), Math.max(end - LINEMAX, g[0]), end - LINEMIN);
+      d.lines[i] = k ? [r3(end), r3(x)] : [r3(x), r3(end)];
+    }
   } else if (h[0] === "w") {
     if (edge !== "t") d.L = clamp(q(O.L + dx), minLength(d.openings), LMAX);
     if (edge !== "r") d.H = clamp(q(O.H + dy), minHeight(d.openings), HMAX);
@@ -534,11 +642,14 @@ canvas.addEventListener("pointerup", stop);
 canvas.addEventListener("pointercancel", stop);
 canvas.addEventListener("pointerleave", () => { if (!drag && hover) { hover = null; canvas.style.cursor = "default"; paint(); } });
 canvas.addEventListener("keydown", e => {
-  if ((e.key === "Delete" || e.key === "Backspace") && design.loads && design.loads[selL] !== undefined) {
+  const del_ = e.key === "Delete" || e.key === "Backspace";
+  if (del_ && design.loads && design.loads[selL] !== undefined) {
     e.preventDefault(); design.loads.splice(selL, 1); selL = -1; fit(design); changed();
-  } else if ((e.key === "Delete" || e.key === "Backspace") && design.openings[sel]) {
+  } else if (del_ && design.lines && design.lines[selN] !== undefined) {
+    e.preventDefault(); design.lines.splice(selN, 1); selN = -1; fit(design); changed();
+  } else if (del_ && design.openings[sel]) {
     e.preventDefault(); design.openings.splice(sel, 1); sel = -1; fit(design); changed();
-  } else if (e.key === "Escape") { sel = -1; selL = -1; paint(); }
+  } else if (e.key === "Escape") { sel = selL = selN = -1; paint(); }
 });
 
 // ---------------------------------------------------------------- the two controls
@@ -551,14 +662,16 @@ function sync() {
     else { $("script").checked = design.script === "block"; sw.className = `sw ${design.script}`; }
   }
   $("addDoor").disabled = $("addWindow").disabled = design.openings.length >= MAXOPS || !freeSpan(design);
-  const bl = $("addLoad");                               // only a network that reads loads has the button at all
+  const bl = $("addLoad"), bn = $("addLine");             // only a network that reads loads has these buttons at all
   if (bl) { if (!m.loads) bl.remove(); else bl.disabled = loadSpot(design) === null; }
+  if (bn) { if (!m.loads) bn.remove(); else bn.disabled = lineSpot(design) === null; }
 }
 $("script")?.addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
-$("addDoor").addEventListener("click", () => { selL = -1; addOpening("door"); });
+$("addDoor").addEventListener("click", () => { selL = selN = -1; addOpening("door"); });
 $("addWindow").addEventListener("click", () => addOpening("window"));
 $("addLoad")?.addEventListener("click", addLoad);
-$("random").addEventListener("click", () => { design = randomDesign(); sel = -1; selL = -1; changed(); });
+$("addLine")?.addEventListener("click", addLine);
+$("random").addEventListener("click", () => { design = randomDesign(); sel = selL = selN = -1; changed(); });
 if (ABOUT[modelId]) { $("about").textContent = ABOUT[modelId]; $("aboutLink").hidden = false; }
 $("aboutLink").addEventListener("click", e => { e.preventDefault(); $("about").hidden = !$("about").hidden; });
 addEventListener("resize", paint);

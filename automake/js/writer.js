@@ -1,6 +1,6 @@
 // How M0 writes a wall: pass by pass (up to 16 parts each) until a pass writes nothing, the parts of each pass added to the
-// wall before the next; `loads` are the point loads on the top edge (x in the wall frame), read only by a network built
-// with them. With `reject`, the world first refuses every new part that overlaps something or leaves the wall
+// wall before the next; `loads` are the loads on the top edge, each a segment [x0, x1] in the wall frame (a point load
+// is x0 = x1, a line load spans [x0, x1]), read only by a network built with them. With `reject`, the world first refuses every new part that overlaps something or leaves the wall
 // (automake/mvp/evaluate.py: the passes loop and world_reject). An async generator of events, for the worker and the tests;
 // its return value is {final, passes, term}.
 import { elementRect, refuseOverlaps, tokens } from "./wall.js";
