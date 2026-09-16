@@ -7,7 +7,7 @@
 // or with ?backend=js.
 //
 // in:  {type: "load", url, file, format, backend, threads}  -> {type: "progress", loaded, total} ..., {type: "ready", backend, ...}
-//      {type: "run", id, wall, ops, start, brief, reject}   -> {type: "encode"|"encoded"|"part"|"pass", id, ...}, {type: "done", id, ...}
+//      {type: "run", id, wall, ops, start, brief, reject, loads} -> {type: "encode"|"encoded"|"part"|"pass", id, ...}, {type: "done", id, ...}
 //      {type: "cancel"}
 import { M0, PROF, profReset } from "./model.js";
 import { EncoderPool } from "./pool.js";
@@ -95,7 +95,8 @@ async function run(msg) {
   profReset(!!msg.prof);
   const t0 = performance.now();
   let firstPart = null, parts = 0;
-  const gen = writeWall(model, { wall: msg.wall, ops: msg.ops, start: msg.start, brief: msg.brief, reject: msg.reject, detail: true, pool });
+  const gen = writeWall(model, { wall: msg.wall, ops: msg.ops, start: msg.start, brief: msg.brief, reject: msg.reject,
+    loads: msg.loads || [], detail: true, pool });
   let r;
   for (;;) {
     r = await gen.next();

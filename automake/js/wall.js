@@ -17,7 +17,8 @@ export const SECTIONS = { "2x4": [0.045, 0.095], "2x6": [0.045, 0.145], "2x8": [
 const LENGTHS = { "2x4": [0.05, 6.0], "2x6": [0.05, 6.0], "2x8": [0.05, 6.0], "2x10": [0.05, 6.0], "2x12": [0.05, 6.0],
   block: [0.095, 0.39], lintel: [0.1, 8.0] };
 export const OVERLAP_TOL = 0.003, FREE_GAP = 0.006, FREE_MIN = 0.03;
-export const TYPES = ["wall", "opening", "part", "free"];
+export const TYPES = ["wall", "opening", "part", "free", "load"];   // "load": a point load on the top edge (sequence.TYPES)
+export const LOAD = 4;
 export const BRIEFS = { frame: 1, block: 2 };
 const TOL_CONTACT = 0.003, KEEPOUT_EXTRA = 0.05, WALL_DEPTH = 0.095;
 const f32 = Math.fround;
@@ -319,12 +320,21 @@ export function refuseOverlaps(wall, obstacles, news, tol = OVERLAP_TOL) {
   return { kept, refused: news.length - kept.length };
 }
 
+// sequence.load_rects: one token per point load, a tick square sitting on the wall's top edge at the load's x (wall frame,
+// metres). A load is not an obstacle, so free space (types 1 and 2) and the canvas cover (types 0 to 2) never see it.
+export function loadRects(wall, loads) {
+  const top = f32(wall[3]), h = f32(Q / 2), q = f32(Q);
+  return (loads || []).map(v => { const x = f32(v); return [f32(x - h), f32(top - q), f32(x + h), top]; });
+}
+
 // ---------------------------------------------------------------- the network's input tokens
-// sequence.tokens + sequence.free_rects: rects (float32 metres), types (0 wall, 1 opening, 2 part, 3 free), items (0 none, 1 + item)
-export function tokens(wall, ops, present) {
-  const rects = [wall.map(f32), ...ops.map(o => o.map(f32)), ...present.map(elementRect)];
-  const types = [0, ...ops.map(() => 1), ...present.map(() => 2)];
-  const items = [0, ...ops.map(() => 0), ...present.map(e => 1 + e[0])];
+// sequence.tokens + sequence.free_rects: rects (float32 metres), types (0 wall, 1 opening, 2 part, 4 load, 3 free),
+// items (0 none, 1 + item). Loads go after the parts and before the free space, as Python builds them; a network that
+// does not read loads must never be given any (its type embedding has no row for them).
+export function tokens(wall, ops, present, loads = []) {
+  const rects = [wall.map(f32), ...ops.map(o => o.map(f32)), ...present.map(elementRect), ...loadRects(wall, loads)];
+  const types = [0, ...ops.map(() => 1), ...present.map(() => 2), ...(loads || []).map(() => LOAD)];
+  const items = [0, ...ops.map(() => 0), ...present.map(e => 1 + e[0]), ...(loads || []).map(() => 0)];
   for (const r of freeRects(rects, types)) { rects.push(r); types.push(3); items.push(0); }
   return { rects, types, items };
 }

@@ -13,6 +13,10 @@ const FORMAT = qs.get("format") || "f16";
 const MODELS = [
   { id: "o4", file: "o4", name: "O4", title: "Frames, then blocks", scripts: ["frame", "block"],
     blurb: "The framing network, then 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted: no framing script or framing data in that stage." },
+  // `loads: true` - the network reads the point loads on the wall's top edge (sequence.py TYPES index 4). Only these
+  // networks are given load tokens, and only for them does the page draw, drag or link any load.
+  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x4) and change `file`.
+  { id: "x3", file: "x3", name: "X3", title: "Studs under loads", scripts: ["frame"], loads: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
@@ -21,14 +25,18 @@ const DEFAULT_MODEL = "o4";
 // what the rulers and the dataset allow (metres)
 const LMIN = 1.2, LMAX = 7.9, HMIN = 2.0, HMAX = 3.15;
 const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3, MAXOPS = 4;
+// point loads on the top edge (automake/mvp/dataset.py: LOAD_CLEAR_END, LOAD_CLEAR_OPENING, load_random's 0.4 m)
+const LEND = 0.2, LCLEAR = 0.15, LAPART = 0.4, MAXLOADS = 8;
 
 // what each artifact opens with, and what it says about itself
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
   o4: () => ({ script: "block", L: 4.97, H: 2.63, openings: [door(1.12, 0.945, 2.0), win(2.625, 1.47, 1.115, 0.83)] }),
+  x3: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)], loads: [2.1, 4.6] }),
 };
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
+  x3: "The framing network after four rounds of learning from the world's physics alone: a search that only knows 'slide a box' improved walls under point loads by their strain energy, and the network learned to reproduce them. It puts a stud about 5 cm from each load on walls it never saw, keeps the wall sheathable, keeps plain walls as the script frames them, and was never told what a stud is. Runs entirely in your browser; nothing is sent anywhere.",
   o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
@@ -65,8 +73,75 @@ function fit(d) {
   for (let i = d.openings.length - 1; i >= 0; i--) { const o = d.openings[i]; if (o.x + o.w > lim + 1e-9) o.x = q(lim - o.w); lim = o.x - GAP; }
   for (const o of d.openings) { o.x = r3(clamp(o.x, SIDE, Math.max(SIDE, d.L - SIDE - o.w))); o.w = r3(o.w); o.h = r3(o.h); o.sill = r3(o.sill); }
   d.L = r3(d.L); d.H = r3(d.H);
+  return fitLoads(d);
+}
+
+// ---------------------------------------------------------------- the point loads on the top edge
+// Only a network built with them reads loads; for the others the page has none at all.
+const readsLoads = () => !!MODELS.find(m => m.id === modelId).loads;
+const qUp = v => Math.ceil(v / 0.005 - 1e-9) * 0.005, qDn = v => Math.floor(v / 0.005 + 1e-9) * 0.005;
+
+// the stretches of top edge a load may sit on: LEND from each end, LCLEAR clear of every opening
+function loadBands(d) {
+  const out = [];
+  let a = LEND;
+  for (const o of d.openings) {
+    const lo = o.x - LCLEAR, hi = o.x + o.w + LCLEAR;
+    if (hi <= a) { a = Math.max(a, hi); continue; }
+    if (lo > a) out.push([a, lo]);
+    a = hi;
+  }
+  out.push([a, d.L - LEND]);
+  return out.map(([lo, hi]) => [qUp(Math.max(lo, LEND)), qDn(Math.min(hi, d.L - LEND))]).filter(b => b[1] >= b[0] - 1e-9);
+}
+
+const snapTo = (x, bands) => {                           // the nearest allowed x, null when there is nowhere to go
+  let best = null, bd = Infinity;
+  for (const [a, b] of bands) { const v = clamp(x, a, b), e = Math.abs(v - x); if (e < bd) { bd = e; best = q(v); } }
+  return best;
+};
+
+// loads on the 5 mm ruler, in order, inside the bands, LAPART apart; one with nowhere left to stand is dropped
+function fitLoads(d) {
+  if (!readsLoads()) { d.loads = []; return d; }
+  const bands = loadBands(d);
+  let xs = (d.loads || []).map(q).sort((a, b) => a - b).slice(0, MAXLOADS);
+  let cur = -Infinity;
+  xs = xs.map(x => { const v = snapTo(Math.max(x, cur + LAPART), bands); if (v !== null) cur = v; return v; });
+  let lim = Infinity;
+  for (let i = xs.length - 1; i >= 0; i--) {
+    const v = xs[i] === null ? null : snapTo(Math.min(xs[i], lim - LAPART), bands);
+    xs[i] = (v === null || v > lim - LAPART + 1e-9) ? null : v;
+    if (xs[i] !== null) lim = xs[i];
+  }
+  d.loads = xs.filter(v => v !== null).map(r3);
   return d;
 }
+
+function loadSpot(d) {                                   // where a new load would go: furthest from the ones there
+  if (d.loads.length >= MAXLOADS) return null;
+  let best = null, bd = -1;
+  for (const [a, b] of loadBands(d)) {
+    for (let x = a; x <= b + 1e-9; x = q(x + 0.05)) {
+      const far = d.loads.length ? Math.min(...d.loads.map(v => Math.abs(v - x))) : Math.min(x - a, b - x) + 1e3;
+      if (far > bd + 1e-9) { bd = far; best = q(x); }
+    }
+  }
+  return best !== null && (!d.loads.length || bd >= LAPART - 1e-9) ? best : null;
+}
+
+function addLoad() {
+  const x = loadSpot(design);
+  if (x === null) return;
+  design.loads.push(x);
+  fit(design);
+  selL = design.loads.indexOf(r3(x));
+  sel = -1;
+  changed();
+}
+
+// the loads as the network reads them: x in the wall frame (dataset.loads_in_wall_frame)
+const loadsInWallFrame = d => (readsLoads() ? d.loads : []).map(v => v - d.L / 2);
 
 function freeSpan(d) {                                   // the widest stretch of bare wall, for a new opening
   const edges = [[SIDE - GAP, SIDE], ...d.openings.map(o => [o.x, o.x + o.w]), [d.L - SIDE, d.L - SIDE + GAP]];
@@ -117,14 +192,30 @@ function randomDesign() {
     const slack = ops.map(() => U(0, spare)).sort((a, b) => a - b);
     let a = SIDE, used = 0;
     ops.forEach((o, i) => { a += slack[i] - used; used = slack[i]; o.x = q(a); a += o.w + GAP; });
-    return fit({ script: design.script, L, H, openings: ops });
+    const d = fit({ script: design.script, L, H, openings: ops, loads: [] });
+    if (readsLoads()) {                                                 // 1 to 3 loads, as dataset.load_random draws them
+      for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) {
+        const bands = loadBands(d);
+        if (!bands.length) break;
+        const span = bands.reduce((s, b) => s + (b[1] - b[0]), 0);
+        let t = Math.random() * span, x = null;
+        for (const [lo, hi] of bands) { if (t <= hi - lo) { x = q(lo + t); break; } t -= hi - lo; }
+        if (x === null) break;
+        if (d.loads.some(v => Math.abs(v - x) < LAPART)) continue;
+        d.loads.push(x);
+        fitLoads(d);
+      }
+    }
+    return d;
   }
 }
 
 // ---------------------------------------------------------------- the link, so a wall can be shared
 function writeHash() {
   const o = design.openings.map(o => o.kind === "door" ? `d${r3(o.x)}_${r3(o.w)}_${r3(o.h)}` : `w${r3(o.x)}_${r3(o.w)}_${r3(o.h)}_${r3(o.sill)}`).join("~");
-  history.replaceState(null, "", "#" + new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o }));
+  const p = { n: modelId, t: design.script, L: design.L, H: design.H, o };
+  if (readsLoads()) p.l = design.loads.map(r3).join("_");                // metres from the wall's left end
+  history.replaceState(null, "", "#" + new URLSearchParams(p));
 }
 if (location.hash.length > 2) try {
   const p = new URLSearchParams(location.hash.slice(1));
@@ -134,14 +225,15 @@ if (location.hash.length > 2) try {
     const val = s.slice(1).split("_").map(Number);
     return s[0] === "d" ? door(val[0], val[1], val[2]) : win(val[0], val[1], val[2], val[3]);
   });
-  if (p.has("L") || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops };   // a link with only a network keeps that artifact's wall
+  if (p.has("L") || p.has("o")) design = { script: p.get("t") === "block" ? "block" : "frame", L: +p.get("L") || 5.8, H: +p.get("H") || 2.7, openings: ops, loads: [] };   // a link with only a network keeps that artifact's wall
   else if (p.has("t")) design.script = p.get("t") === "block" ? "block" : "frame";
+  if (p.has("l")) design.loads = (p.get("l") || "").split("_").filter(Boolean).map(Number).filter(v => isFinite(v));
 } catch { /* keep the default wall */ }
 if (!MODELS.find(m => m.id === modelId).scripts.includes(design.script)) design.script = "frame";
 fit(design);
 
 // ---------------------------------------------------------------- state
-let sel = -1, hover = null, drag = null;
+let sel = -1, selL = -1, hover = null, drag = null;
 let scene = null, obs = [], parts = [], pending = [], hot = null;
 let runId = 1, timer = null, ready = false, wantRun = true;
 window.__automake = { loads: [], runs: [] };
@@ -195,7 +287,8 @@ function startRun() {
   scene = skinRects(skinOf(sc));
   obs = scene.ops.map(r => r.slice());
   parts = []; pending = []; hot = null;
-  worker.postMessage({ type: "run", id: runId, wall: scene.wall, ops: scene.ops, start: [], brief: BRIEFS[design.script], reject: true });
+  worker.postMessage({ type: "run", id: runId, wall: scene.wall, ops: scene.ops, start: [], brief: BRIEFS[design.script],
+    reject: true, loads: loadsInWallFrame(design) });
   status("writing…");
   tick();
 }
@@ -266,6 +359,25 @@ function cross(x, y, r, on) {                            // the CAD corner mark,
   ctx.moveTo(px(x), py(y) - r); ctx.lineTo(px(x), py(y) + r); ctx.stroke();
 }
 
+// a point load: a blue arrow standing on the wall's top edge at its x, pointing down
+const LARROW = 0.30, LFOOT = 0.045;                      // metres above the top edge: the tail, and the tip
+function drawLoad(x, H, i, on) {
+  const X = px(x), yTail = py(H + LARROW), yTip = py(H + LFOOT);
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = on ? "#1668d8" : BLUE;
+  ctx.lineWidth = on ? 2.4 : 1.6;
+  ctx.beginPath(); ctx.moveTo(X, yTail); ctx.lineTo(X, yTip - 3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(X, yTip + 5); ctx.lineTo(X - 4.5, yTip - 5); ctx.lineTo(X + 4.5, yTip - 5); ctx.closePath(); ctx.fill();
+  if (on) {                                              // the x that removes it
+    const dx = X + 14, dy = py(H + LARROW) + 5;
+    const lit = hover === `l:${i}:x`;
+    ctx.lineWidth = lit ? 2 : 1;
+    ctx.strokeStyle = lit ? "#000" : "#9ab";
+    ctx.beginPath(); ctx.moveTo(dx - 4, dy - 4); ctx.lineTo(dx + 4, dy + 4); ctx.moveTo(dx + 4, dy - 4); ctx.lineTo(dx - 4, dy + 4); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function paint() {
   measure();
   const { L, H, openings } = design;
@@ -280,6 +392,8 @@ function paint() {
     ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, Math.max(0, w - 1), Math.max(0, h - 1));
   }
   if (hot) { ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14; frame(ebox(hot.e), [], BLUE, 2.5); frame(ebox(hot.e), [], BLUE, 2.5); ctx.restore(); }   // a lit, glowing outline   // the part just written
+
+  (design.loads || []).forEach((x, i) => drawLoad(x, H, i, selL === i || hover === `l:${i}` || hover === `l:${i}:x`));
 
   frame([0, 0, L, H], [1, 3], "#555", 1);                // the wall, and the three crosses that size it
   cross(0, 0, 7, false);
@@ -318,6 +432,11 @@ function tick() {
 function hit(p) {
   const { L, H, openings } = design;
   const near = (x, y, r) => Math.abs(p.x - px(x)) <= r && Math.abs(p.y - py(y)) <= r;
+  const loads = design.loads || [];                      // the arrows live above the wall, clear of its top edge
+  for (let i = loads.length - 1; i >= 0; i--) {
+    if (selL === i && Math.abs(p.x - px(loads[i]) - 14) <= 10 && Math.abs(p.y - py(H + LARROW) - 5) <= 10) return `l:${i}:x`;
+    if (Math.abs(p.x - px(loads[i])) <= 11 && p.y >= py(H + LARROW) - 8 && p.y <= py(H + LFOOT) + 5) return `l:${i}`;
+  }
   for (let i = openings.length - 1; i >= 0; i--) {
     const b = obox(openings[i]);
     if (sel === i && Math.abs(p.x - px(b[2]) - 15) <= 11 && Math.abs(p.y - py(b[3]) + 15) <= 11) return `o:${i}:x`;
@@ -346,16 +465,21 @@ function hit(p) {
 const CURSOR = { "w:r": "ew-resize", "w:t": "ns-resize", "w:c": "nwse-resize", lb: "nesw-resize", rb: "nwse-resize",
   lt: "nwse-resize", rt: "nesw-resize", "l.": "ew-resize", "r.": "ew-resize", ".t": "ns-resize", ".b": "ns-resize",
   move: "move", x: "pointer" };
+const cursorFor = h => !h ? "default" : (CURSOR[h] || CURSOR[h.split(":")[2]] || (h.startsWith("l:") ? "ew-resize" : "default"));
 const at = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
 canvas.addEventListener("pointerdown", e => {
   const p = at(e), h = hit(p);
   canvas.focus({ preventScroll: true });
-  if (h && h.startsWith("o:")) {
+  if (h && h.startsWith("l:")) {
+    const [, i, edge] = h.split(":");
+    if (edge === "x") { design.loads.splice(+i, 1); selL = -1; fit(design); changed(); return; }
+    selL = +i; sel = -1;
+  } else if (h && h.startsWith("o:")) {
     const [, i, edge] = h.split(":");
     if (edge === "x") { design.openings.splice(+i, 1); sel = -1; fit(design); changed(); return; }
-    sel = +i;
-  } else if (!h) sel = -1;
+    sel = +i; selL = -1;
+  } else if (!h) { sel = -1; selL = -1; }
   if (!h) { paint(); return; }
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
@@ -367,13 +491,21 @@ canvas.addEventListener("pointermove", e => {
   const p = at(e);
   if (!drag) {
     const h = hit(p);
-    if (h !== hover) { hover = h; canvas.style.cursor = h ? CURSOR[h] || CURSOR[h.split(":")[2]] || "default" : "default"; paint(); }
+    if (h !== hover) { hover = h; canvas.style.cursor = cursorFor(h); paint(); }
     return;
   }
   e.preventDefault();
   const dx = mx(p.x) - mx(drag.p.x), dy = my(p.y) - my(drag.p.y);
   const O = drag.d0, d = design, h = drag.h.split(":"), edge = h[h.length - 1];
-  if (h[0] === "w") {
+  if (h[0] === "l") {                                    // a load slides along the top edge, between its neighbours
+    const i = +h[1];
+    if (O.loads[i] === undefined || d.loads[i] === undefined) return;
+    const lo = i > 0 ? d.loads[i - 1] + LAPART : LEND, hi = i + 1 < d.loads.length ? d.loads[i + 1] - LAPART : d.L - LEND;
+    const bands = loadBands(d).map(b => [Math.max(b[0], lo), Math.min(b[1], hi)]).filter(b => b[1] >= b[0] - 1e-9);
+    const v = snapTo(q(O.loads[i] + dx), bands);
+    if (v === null) return;
+    d.loads[i] = r3(v);
+  } else if (h[0] === "w") {
     if (edge !== "t") d.L = clamp(q(O.L + dx), minLength(d.openings), LMAX);
     if (edge !== "r") d.H = clamp(q(O.H + dy), minHeight(d.openings), HMAX);
   } else {
@@ -402,9 +534,11 @@ canvas.addEventListener("pointerup", stop);
 canvas.addEventListener("pointercancel", stop);
 canvas.addEventListener("pointerleave", () => { if (!drag && hover) { hover = null; canvas.style.cursor = "default"; paint(); } });
 canvas.addEventListener("keydown", e => {
-  if ((e.key === "Delete" || e.key === "Backspace") && design.openings[sel]) {
+  if ((e.key === "Delete" || e.key === "Backspace") && design.loads && design.loads[selL] !== undefined) {
+    e.preventDefault(); design.loads.splice(selL, 1); selL = -1; fit(design); changed();
+  } else if ((e.key === "Delete" || e.key === "Backspace") && design.openings[sel]) {
     e.preventDefault(); design.openings.splice(sel, 1); sel = -1; fit(design); changed();
-  } else if (e.key === "Escape") { sel = -1; paint(); }
+  } else if (e.key === "Escape") { sel = -1; selL = -1; paint(); }
 });
 
 // ---------------------------------------------------------------- the two controls
@@ -417,11 +551,14 @@ function sync() {
     else { $("script").checked = design.script === "block"; sw.className = `sw ${design.script}`; }
   }
   $("addDoor").disabled = $("addWindow").disabled = design.openings.length >= MAXOPS || !freeSpan(design);
+  const bl = $("addLoad");                               // only a network that reads loads has the button at all
+  if (bl) { if (!m.loads) bl.remove(); else bl.disabled = loadSpot(design) === null; }
 }
 $("script")?.addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
-$("addDoor").addEventListener("click", () => addOpening("door"));
+$("addDoor").addEventListener("click", () => { selL = -1; addOpening("door"); });
 $("addWindow").addEventListener("click", () => addOpening("window"));
-$("random").addEventListener("click", () => { design = randomDesign(); sel = -1; changed(); });
+$("addLoad")?.addEventListener("click", addLoad);
+$("random").addEventListener("click", () => { design = randomDesign(); sel = -1; selL = -1; changed(); });
 if (ABOUT[modelId]) { $("about").textContent = ABOUT[modelId]; $("aboutLink").hidden = false; }
 $("aboutLink").addEventListener("click", e => { e.preventDefault(); $("about").hidden = !$("about").hidden; });
 addEventListener("resize", paint);

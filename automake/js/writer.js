@@ -1,5 +1,6 @@
 // How M0 writes a wall: pass by pass (up to 16 parts each) until a pass writes nothing, the parts of each pass added to the
-// wall before the next; with `reject`, the world first refuses every new part that overlaps something or leaves the wall
+// wall before the next; `loads` are the point loads on the top edge (x in the wall frame), read only by a network built
+// with them. With `reject`, the world first refuses every new part that overlaps something or leaves the wall
 // (automake/mvp/evaluate.py: the passes loop and world_reject). An async generator of events, for the worker and the tests;
 // its return value is {final, passes, term}.
 import { elementRect, refuseOverlaps, tokens } from "./wall.js";
@@ -8,11 +9,11 @@ import { PROF, profAdd } from "./model.js";
 export const MAX_PASSES = 40;
 
 export async function* writeWall(model, { wall, ops, start = [], brief, reject = false, maxPasses = MAX_PASSES, detail = true,
-  pool = null, split = 1 }) {
+  pool = null, split = 1, loads = [] }) {
   let cur = start.map(e => e.slice());
   for (let p = 0; p < maxPasses; p++) {
     const t0 = performance.now();
-    const tok = tokens(wall, ops, cur);
+    const tok = tokens(wall, ops, cur, loads);
     if (PROF.on) profAdd("tokens + free space (JS)", performance.now() - t0);
     yield { type: "encode", pass: p, tokens: tok, present: cur.length };
     const enc = await model.encode(tok, brief, pool, split);
