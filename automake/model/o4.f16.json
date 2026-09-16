@@ -7,20 +7,21 @@
   "dec_layers": 4,
   "heads": 4,
   "dropout": 0.1,
-  "coords": "ticks",
-  "output": "anchor",
   "anchor_k": 40,
-  "anchor_only": false,
-  "relbias": false,
-  "arch": "encdec",
   "frame": "shift",
   "max_members": 16,
-  "orient_input": false,
-  "pos": "none",
   "chunk": 16,
   "briefs": true,
   "canvas": 80,
-  "free": true
+  "free": true,
+  "step": "pick",
+  "coords": "ticks",
+  "output": "anchor",
+  "anchor_only": false,
+  "relbias": false,
+  "arch": "encdec",
+  "orient_input": false,
+  "pos": "none"
  },
  "items": [
   "2x4",
@@ -1360,14 +1361,14 @@
    "dtype": "f16"
   }
  ],
- "name": "O1",
- "run": "O1_rehearsal",
+ "name": "O4",
+ "run": "O4_rehearsal_long",
  "params": 8766554,
  "trained": "2026-09-15",
  "exported": "2026-09-15",
- "commit": "e585118",
+ "commit": "7f3ab4a",
  "script": "block+frame",
- "minutes": 15.0,
+ "minutes": 50.0,
  "init": "data/mvp/exp/N0_frames.pt",
- "note": "stage 2: blocks + framed walls written by N0_frames (no framing script)"
+ "note": "blocks + framed walls written by N0_frames and kept by the world (no framing script), 50 min"
 }

@@ -11,11 +11,12 @@ const FORMAT = qs.get("format") || "f16";
 
 // the networks on offer: model/<file>.<format>.json/.bin, written by scripts/export_web_model.py
 const MODELS = [
-  { id: "o1", file: "o1", name: "O1", label: "O1 · frames, then blocks", scripts: ["frame", "block"] },
+  { id: "o4", file: "o4", name: "O4", title: "Frames, then blocks", scripts: ["frame", "block"],
+    blurb: "The framing network, then 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted: no framing script or framing data in that stage." },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
-const DEFAULT_MODEL = "o1";
+const DEFAULT_MODEL = "o4";
 
 // what the rulers and the dataset allow (metres)
 const LMIN = 1.2, LMAX = 7.9, HMIN = 2.0, HMAX = 3.15;
@@ -24,11 +25,11 @@ const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3,
 // what each artifact opens with, and what it says about itself
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
-  o1: () => ({ script: "block", L: 4.6, H: 2.46, openings: [win(1.15, 1.23, 1.285, 0.71), door(3.37, 0.98, 2.09)] }),
+  o4: () => ({ script: "block", L: 4.97, H: 2.63, openings: [door(1.12, 0.945, 2.0), win(2.625, 1.47, 1.115, 0.83)] }),
 };
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  o1: "The same network after it had learned timber framing, then trained for 15 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage: a small forgetting study. Its block walls are still rough (about half the script's blocks right); its framed walls are as good as before. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
+  o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
 const $ = id => document.getElementById(id);

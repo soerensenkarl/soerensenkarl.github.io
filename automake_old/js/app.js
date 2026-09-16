@@ -12,14 +12,14 @@ const MODELS = [
   { id: "n0", file: "n0", name: "N0", title: "Frames", scripts: ["frame"],
     blurb: "Trained on framed walls from the framing script only. It has no block parts in its vocabulary.",
     numbers: "N0 on framed walls it had not seen: precision 0.91, recall 0.88 beyond the training range (120 runs); exactly right in 62% of runs in the training range (48) and 52% beyond it up to 6 m (42)." },
-  { id: "o1", file: "o1", name: "O1", title: "Frames, then blocks", scripts: ["frame", "block"],
-    blurb: "N0, then 15 minutes on concrete block walls. It kept its framing by rehearsing framed walls it had written itself and the world kept: no framing script or framing data after the first stage.",
-    numbers: "O1 on walls it had not seen, beyond the training range: framed walls precision 0.90, recall 0.88 (N0: 0.91 / 0.88); concrete block walls still rough after 15 minutes: precision 0.37, recall 0.49 (120 runs each)." },
+  { id: "o4", file: "o4", name: "O4", title: "Frames, then blocks", scripts: ["frame", "block"],
+    blurb: "N0, then 50 minutes on concrete block walls. It kept its framing by rehearsing framed walls it had written itself and the world kept: no framing script or framing data after the first stage.",
+    numbers: "O4 on walls it had not seen, beyond the training range: framed walls precision 0.91, recall 0.88 (N0: 0.91 / 0.88); concrete block walls precision 0.68, recall 0.72, and 0.73 / 0.71 with the world refusing overlaps (120 runs each)." },
   { id: "m0", file: "m0", name: "M0", title: "Both together", scripts: ["frame", "block"],
     blurb: "Trained on both scripts together from the start, over several rounds: the best block walls so far.",
     numbers: "M0 on walls it had not seen: framed walls exactly right in 77% of runs in the training range (48) and 55% beyond it up to 6 m (42); block walls beyond the training range precision 0.79, recall 0.82 as written, 0.84 / 0.81 with the world refusing overlaps (120 runs each)." },
 ];
-const DEFAULT_MODEL = "o1";
+const DEFAULT_MODEL = "o4";
 
 // ---------------------------------------------------------------- designs and presets
 const door = (x, w, h) => ({ kind: "door", x, w, h, sill: 0 });
@@ -29,11 +29,11 @@ const THREE = [door(0.5, 0.9, 2.1), win(2.0, 1.2, 1.2, 0.9), win(3.9, 1.4, 1.2, 
 // chosen examples, each run first with the Python network (2026-09-15); the tiles show how each goes
 const PRESETS = [
   { label: "Framed wall, three openings", sub: "N0 · beyond training", model: "n0", design: D("frame", 5.8, 2.7, THREE) },
-  { label: "The same wall after learning blocks", sub: "O1 · its framing kept", model: "o1", design: D("frame", 5.8, 2.7, THREE) },
+  { label: "The same wall after learning blocks", sub: "O4 · its framing kept", model: "o4", design: D("frame", 5.8, 2.7, THREE) },
   { label: "Tall wall, 2.6 m window", sub: "N0 · beyond training", model: "n0", design: D("frame", 4.8, 3.05, [win(1.1, 2.6, 1.4, 0.8)]) },
   { label: "Fill the holes", sub: "N0 · 60% of the parts given", model: "n0", design: D("frame", 6.0, 2.6, [door(0.8, 1.0, 2.1), win(3.0, 1.8, 1.2, 0.8)], { start: "subset", share: 0.6 }) },
-  { label: "Finish a half-built block wall", sub: "O1 · its blocks are still rough", model: "o1", design: D("block", 5.4, 2.7, [door(0.6, 0.9, 2.1), win(2.8, 1.6, 1.2, 0.9)], { start: "prefix", share: 0.5 }) },
-  { label: "The world refuses overlaps", sub: "O1 · blocks with holes, a rule outside the network", model: "o1", design: D("block", 5.8, 2.7, [door(0.3, 0.9, 2.1), win(1.7, 0.8, 1.2, 0.9), win(3.0, 1.0, 1.2, 0.9), door(4.5, 1.0, 2.1)], { start: "subset", share: 0.6, reject: true }) },
+  { label: "Finish a half-built block wall", sub: "O4 · its blocks after 50 minutes", model: "o4", design: D("block", 5.4, 2.7, [door(0.6, 0.9, 2.1), win(2.8, 1.6, 1.2, 0.9)], { start: "prefix", share: 0.5 }) },
+  { label: "The world refuses overlaps", sub: "O4 · blocks with holes, a rule outside the network", model: "o4", design: D("block", 5.8, 2.7, [door(0.3, 0.9, 2.1), win(1.7, 0.8, 1.2, 0.9), win(3.0, 1.0, 1.2, 0.9), door(4.5, 1.0, 2.1)], { start: "subset", share: 0.6, reject: true }) },
   { label: "A 7.2 m block wall", sub: "M0 · both scripts from the start", model: "m0", design: D("block", 7.2, 2.8, [door(0.6, 1.0, 2.1), win(2.6, 1.2, 1.2, 0.9), win(4.8, 1.6, 1.2, 0.9)]) },
 ];
 const TRAIN = { L: [2.4, 6.0], H: [2.2, 2.8], ops: 2, w: [0.4, 1.8], doorW: [0.6, 1.8], doorH: [1.8, 2.4], winH: [0.4, 1.8], sill: [0.3, 1.5], side: 0.2, gap: 0.3, above: 0.35 };
