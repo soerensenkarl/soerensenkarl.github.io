@@ -39,7 +39,7 @@ const SNAP = 0.015, STUD = 0.6, SPSNAP = [0.6, 0.4], EXACT = 5e-4;
 // what each artifact opens with, and what it says about itself
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
-  o4: () => ({ script: "block", L: 4.97, H: 2.63, openings: [door(1.12, 0.945, 2.0), win(2.625, 1.47, 1.115, 0.83)] }),
+  o4: () => ({ script: "block", L: 5.23, H: 2.69, openings: [door(0.965, 0.9, 2.1), win(2.65, 0.89, 1.2, 0.59)] }),
   x8: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
                 off: 0.45, sp: 0.6 }),
 };
