@@ -532,22 +532,35 @@ const FILL = { block: ["#c9c9c9", "#6b6b6b"], lintel: ["#8d8d8d", "#3a3a3a"], ti
 // are drawn in its own frame - the first edge of its quadrilateral is its length, the second its thickness.
 function grain(poly, seed) {
   const P = poly.map(([x, y]) => [px(x), py(y)]);
-  const ux = P[1][0] - P[0][0], uy = P[1][1] - P[0][1];
-  const len = Math.hypot(ux, uy), n = Math.hypot(P[2][0] - P[1][0], P[2][1] - P[1][1]);
-  if (n < 3 || len < 8) return;
+  // the part's own frame, from its longest side: a member lies at any angle, and a declared cut may have taken a
+  // corner off it, so nothing here may assume the four corners of a rectangle
+  let a = P[0], len = 0, ux = 1, uy = 0;
+  for (let i = 0; i < P.length; i++) {
+    const q = P[(i + 1) % P.length], dx = q[0] - P[i][0], dy = q[1] - P[i][1], L = Math.hypot(dx, dy);
+    if (L > len) { len = L; a = P[i]; ux = dx / L; uy = dy / L; }
+  }
+  if (len < 8) return;
+  let s0 = 0, s1 = 0, t0 = 0, t1 = 0;                    // its extent along that side and across it
+  for (const q of P) {
+    const dx = q[0] - a[0], dy = q[1] - a[1];
+    const alo = dx * ux + dy * uy, acr = dx * -uy + dy * ux;
+    s0 = Math.min(s0, alo); s1 = Math.max(s1, alo); t0 = Math.min(t0, acr); t1 = Math.max(t1, acr);
+  }
+  const span = s1 - s0, n = t1 - t0;
+  if (n < 3) return;
   let r = seed * 9301 + 49297;
   const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
   ctx.save();
-  ctx.translate((P[0][0] + P[1][0] + P[2][0] + P[3][0]) / 4, (P[0][1] + P[1][1] + P[2][1] + P[3][1]) / 4);
+  polyPath(poly); ctx.clip();                            // clipped to the part as it is really drawn, cut and all
+  ctx.translate(a[0] + ux * (s0 + s1) / 2 - uy * (t0 + t1) / 2, a[1] + uy * (s0 + s1) / 2 + ux * (t0 + t1) / 2);
   ctx.rotate(Math.atan2(uy, ux));
-  ctx.beginPath(); ctx.rect(-len / 2, -n / 2, len, n); ctx.clip();
   ctx.lineWidth = 1;
   for (let k = 0, m = 2 + Math.floor(n / 4); k < m; k++) {
     const off = (k + .5 + (rnd() - .5) * .8) * n / m - n / 2, amp = .6 + rnd() * 1.2, ph = rnd() * 6.3, dark = .12 + rnd() * .16;
     ctx.strokeStyle = `rgba(120,78,30,${dark})`; ctx.beginPath();
-    for (let t = 0; t <= len; t += 6) {
+    for (let t = 0; t <= span; t += 6) {
       const wob = Math.sin(t / 40 + ph) * amp;
-      t ? ctx.lineTo(t - len / 2, off + wob) : ctx.moveTo(t - len / 2, off + wob);
+      t ? ctx.lineTo(t - span / 2, off + wob) : ctx.moveTo(t - span / 2, off + wob);
     }
     ctx.stroke();
   }
@@ -706,7 +719,11 @@ function paint() {
     if (fill === FILL.timber[0]) grain(poly, (e[1] * 7 + e[2] * 13 + e[3] * 3 + e[4]) % 1000);
     polyPath(poly); ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke();
   });
-  if (hot) { ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14; outline(epoly(hot.e), [], BLUE, 2.5); outline(epoly(hot.e), [], BLUE, 2.5); ctx.restore(); }   // a lit, glowing outline   // the part just written
+  if (hot) {                                             // the part just written, lit: the shape it really is, cut and all
+    const q = partPolys[hot.i] || epoly(hot.e);
+    ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14;
+    outline(q, [], BLUE, 2.5); outline(q, [], BLUE, 2.5); ctx.restore();
+  }
 
   if (readsLoads()) { drawLoads(design, (hover || "")[0] === "l", hover === "k"); drawDim(design, held); }
 
@@ -748,7 +765,7 @@ function tick() {
     const dt = last ? now - last : 16;
     last = now;
     for (let i = pending.length > 64 ? 4 : pending.length > 24 ? 2 : 1; i-- > 0 && pending.length;) {
-      const e = pending.shift(); parts.push(e); hot = { e, a: 1 };
+      const e = pending.shift(); parts.push(e); hot = { e, i: parts.length - 1, a: 1 };
     }
     if (hot && (hot.a -= dt / 420) <= 0) hot = null;
     paint();
