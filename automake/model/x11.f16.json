@@ -1370,14 +1370,14 @@
    "dtype": "f16"
   }
  ],
- "name": "X10",
- "run": "X10_frame",
+ "name": "X11",
+ "run": "X11_frame",
  "params": 8765784,
  "trained": "2026-09-17",
  "exported": "2026-09-17",
- "commit": "37c9586",
+ "commit": "73fc53a",
  "script": "frame",
- "minutes": 25.0,
- "init": "data/mvp/exp/X8_frame.pt",
- "note": "expert iteration from data/mvp/exp/X8_frame.pt: the world's searched frame walls under loads (data/mvp/expert_X11_grid.npz), plus plain script walls"
+ "minutes": 40.0,
+ "init": "data/mvp/exp/X10_frame.pt",
+ "note": "expert iteration from data/mvp/exp/X10_frame.pt: the world's searched frame walls under loads (data/mvp/expert_X11_grid.npz,data/mvp/expert_X11_mixed.npz,data/mvp/expert_X11_heavy.npz), plus plain script walls"
 }

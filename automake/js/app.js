@@ -16,9 +16,9 @@ const MODELS = [
   // `loads: true` - the network reads the loads on the wall's top edge (sequence.py TYPES index 4). Only these
   // networks are given load tokens, and only for them does the page draw, drag or link a load. (The network reads a
   // line load too; the page offers only the point-load array, which is what a wall is designed for.)
-  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x11), change this
+  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x12), change this
   // entry's `id` and `file` with the `WALLS` and `ABOUT` keys, and pick its wall again with web/tests/pick_wall.mjs.
-  { id: "x10", file: "x10", name: "X10", title: "Designs with the forces", scripts: ["frame"], loads: true },
+  { id: "x11", file: "x11", name: "X11", title: "Designs with the forces", scripts: ["frame"], loads: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
   // It reads a stock as well: it was trained with one on every wall, and given no inventory tokens it is off its own
@@ -77,9 +77,10 @@ const WALLS = {
   // behind the same wall, so the two can be told apart by what they lay on it and by nothing else.
   o6: () => ({ script: "block", L: 5.23, H: 2.69, openings: [door(0.965, 0.9, 2.1), win(2.65, 0.89, 1.2, 0.59)] }),
   // picked by trying: web/tests/pick_wall.mjs ranked 16 candidates and this one shows the answer to the loads most
-  // plainly - every stud within 21 mm of an arrow, against 266 mm for the script's load-blind 600 mm grid on the same
-  // wall, both openings headed, jacked and silled, nothing hanging, all five arrows over an opening on a header, 24 parts
-  x10: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
+  // plainly - every stud within 6 mm of an arrow, 8 mm at worst, against 266 mm for the script's load-blind 600 mm
+  // grid on the same wall; both openings headed, jacked and silled, nothing hanging, all five arrows over an opening
+  // carried on a header, 25 parts
+  x11: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
                 off: 0.3, sp: 0.6 }),
   // a gable to open on; drag the ridge to either end of the wall and the same network frames a single slope
   g2: () => ({ script: "frame", L: 4.6, H: 2.45, pitch: 26, ridge: 2.1, openings: [door(0.6, 0.9, 2.05), win(2.5, 1.2, 1.0, 0.9)] }),
@@ -91,7 +92,7 @@ const ABOUT = {
   g2: "It frames the wall it is given to the eaves - kings, jacks, headers, sills - and does not yet reach into the triangle above; the next round is for that. An 8.9-million-parameter encoder-decoder transformer trained from scratch on 40,000 walls whose top edge is not level: a ridge anywhere along the wall, at its middle, off to one side, or on an end corner, where the wall becomes a single slope. It writes each part as the two ends of its own edge, says which of its ends are cut, and the world saws them flush. Held out on 8 walls it had not seen: 83% of the script's parts, 83% of its own parts right. It runs entirely in your browser; nothing is sent anywhere.",
   i0: "The designer says what timber is in the yard and the wall is framed from that and nothing else. The network reads the available sections as tokens and may write no other: an item is not a name to it but its two numbers, so a section it never saw in training is read like one it did. Turn the wall to 3D and a 45 x 245 stands visibly deeper through the wall than a 45 x 95, which is the whole of what a stock changes and the drawing cannot show. Held out on 8 walls it had not seen: 98% of the script's parts, 99% of its own parts right, 5 of the 8 walls exact. The known gap is the built-up header on a shallow stock, where nothing on its own is deep enough to span. Runs entirely in your browser; nothing is sent anywhere.",
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  x10: "The framing network after eleven rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it now puts a stud under each of them – 21 mm away on the wall this page opens on, where the script's 600 mm grid leaves 266 – frames every opening on every side, carries a load standing over a door or a window on a header, and leaves nothing hanging, and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
+  x11: "The framing network after twelve rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it puts a stud under each of them – 6 mm away on the wall this page opens on, where the script's 600 mm grid leaves 266 – frames every opening on every side, carries a load standing over a door or a window on a header, and leaves nothing hanging, and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
   o6: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framing came out better than before (89% of the script's parts, 93% of its own right, and 79% of training-domain walls exactly), and its block walls get about 8 in 10 blocks right - better than the network trained on both kinds of wall together. What it still gets wrong is finishing: on the longest walls it can stop before the wall is full. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
