@@ -47,6 +47,7 @@ export const OVERLAP_TOL = 0.003, FREE_GAP = 0.006, FREE_MIN = 0.03;
 // sequence.TYPES, as far as the rectangle format goes; the segment format adds "template" and "inventory" (segment.js)
 export const TYPES = ["wall", "opening", "part", "free", "load"];
 export const LOAD = 4;
+export const POINT_KN = 10.0;        // kN: the load that says nothing about its own size (world/loads.py POINT_KN)
 export const BRIEFS = { frame: 1, block: 2 };
 const TOL_CONTACT = 0.003, KEEPOUT_EXTRA = 0.05, WALL_DEPTH = 0.095;
 const f32 = Math.fround;
@@ -384,9 +385,10 @@ export function refuseOverlaps(wall, obstacles, news, tol = OVERLAP_TOL) {
 }
 
 // sequence.load_rects: one token per load, a segment [x0, x1] of the wall's top edge (wall frame, metres) drawn as the
-// rect (x0 - Q/2, top - Q, x1 + Q/2, top). A point load is x0 = x1 (a tick square); a line load spans [x0, x1]. The
-// magnitude is implicit - 10 kN for a point load, 10 kN/m for a line load - so the width says which it is. A load is not
-// an obstacle, so free space (types 1 and 2) and the canvas cover (types 0 to 2) never see it.
+// rect (x0 - Q/2, top - Q, x1 + Q/2, top). A point load is x0 = x1 (a tick square); a line load spans [x0, x1]. A third
+// value on the segment is the load's magnitude in kN (POINT_KN when it is left off); the rect says nothing about it, so
+// the network reads it through `load_mag` instead (model.js embed). A load is not an obstacle, so free space (types 1
+// and 2) and the canvas cover (types 0 to 2) never see it.
 export function loadRects(wall, loads) {
   const top = f32(wall[3]), h = f32(Q / 2), q = f32(Q);
   return (loads || []).map(v => {
@@ -403,9 +405,14 @@ export function tokens(wall, ops, present, loads = []) {
   const rects = [wall.map(f32), ...ops.map(o => o.map(f32)), ...present.map(elementRect), ...loadRects(wall, loads)];
   const types = [0, ...ops.map(() => 1), ...present.map(() => 2), ...(loads || []).map(() => LOAD)];
   const items = [0, ...ops.map(() => 0), ...present.map(e => 1 + e[0]), ...(loads || []).map(() => 0)];
-  for (const r of freeRects(rects, types)) { rects.push(r); types.push(3); items.push(0); }
-  return { rects, types, items };
+  // sequence.collate tok_kn: the kN of each load token, 0 on every other kind
+  const kn = [0, ...ops.map(() => 0), ...present.map(() => 0), ...(loads || []).map(loadKn)];
+  for (const r of freeRects(rects, types)) { rects.push(r); types.push(3); items.push(0); kn.push(0); }
+  return { rects, types, items, kn };
 }
+
+// a load segment's magnitude in kN: the third value of [x0, x1, kN], POINT_KN when it is left off
+export const loadKn = v => (Array.isArray(v) && v.length > 2 && isFinite(v[2]) ? f32(v[2]) : POINT_KN);
 
 export function freeRects(rects, types) {
   const wall = rects[types.indexOf(0)];

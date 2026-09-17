@@ -15,7 +15,7 @@
   "canvas": 80,
   "free": true,
   "step": "pick",
-  "loads": true,
+  "loads": false,
   "template": false,
   "inventory": true,
   "coords": "ticks",
@@ -1523,14 +1523,14 @@
    "dtype": "f16"
   }
  ],
- "name": "G2b",
- "run": "G2b_gable",
+ "name": "G3",
+ "run": "G3_gable",
  "params": 8979795,
  "trained": "2026-09-17",
  "exported": "2026-09-17",
- "commit": "2687143",
+ "commit": "d424f79",
  "script": "frame",
- "minutes": 40.0,
- "init": null,
- "note": "from scratch on plain frame script walls (train+gable) alone"
+ "minutes": 30.0,
+ "init": "data/mvp/exp/G2b_gable.pt",
+ "note": "free space, the coarse view and junk states (half the states hold wrong parts the world let stand), on train+gable walls from G2b_gable"
 }

@@ -18,7 +18,9 @@ const MODELS = [
   // line load too; the page offers only the point-load array, which is what a wall is designed for.)
   // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x12), change this
   // entry's `id` and `file` with the `WALLS` and `ABOUT` keys, and pick its wall again with web/tests/pick_wall.mjs.
-  { id: "x11", file: "x11", name: "X11", title: "Designs with the forces", scripts: ["frame"], loads: true },
+  // `heavy: true` - the network was trained with one load of its own four times as heavy (dataset "heavy"),
+  // so the page draws it, drags it and links it (`k=`). The others are given POINT_KN loads only.
+  { id: "x11", file: "x11", name: "X11", title: "Designs with the forces", scripts: ["frame"], loads: true, heavy: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
   // It reads a stock as well: it was trained with one on every wall, and given no inventory tokens it is off its own
@@ -48,6 +50,10 @@ const SIDE = 0.2, GAP = 0.3, MINW = 0.4, MINH = 0.4, HEAD = 0.35, MINSILL = 0.3,
 // point loads of 10 kN standing every `sp` metres from `off`, LEND clear of each end of the wall, over an opening if
 // they fall there. The standard is the data's own 600 mm line.
 const LEND = 0.2, SPDEF = 0.6, OFFDEF = 0.3, SPMIN = 0.3, SPMAX = 2.4, MAXLOADS = 16;
+// and one load of its own, four times as heavy (dataset.HEAVY_KN), which a `heavy: true` network was trained with:
+// it stands anywhere along the top edge, openings included, and is dragged there. Its tail starts higher than the
+// array's line, so a heavier load is a bigger arrow, and it says its own weight.
+const HEAVY_KN = 40, HARROW = 0.46;
 const SPACINGS = [0.4, 0.6, 0.6, 0.6, 0.9, 1.2];         // what "random" draws the interval from
 // the magnet: 15 mm either side of a value the trade builds to, and nothing outside that window. The interval holds at
 // the 600 mm line and at 400; the offset holds where an arrow stands on a stud of the script's 600 mm grid from the
@@ -83,7 +89,7 @@ const WALLS = {
   // grid on the same wall; both openings headed, jacked and silled, nothing hanging, all five arrows over an opening
   // carried on a header, 25 parts
   x11: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
-                off: 0.3, sp: 0.6 }),
+                off: 0.3, sp: 0.6, kx: 2.4 }),   // the heavy load starts on solid wall, midway between two arrows
   // a gable to open on; drag the ridge to either end of the wall and the same network frames a single slope
   g2: () => ({ script: "frame", L: 4.6, H: 2.45, pitch: 26, ridge: 2.1, openings: [door(0.6, 0.9, 2.05), win(2.5, 1.2, 1.0, 0.9)] }),
   // the block wall Karl picked for the second artifact, with the window opening on the running bond it is laid in
@@ -91,10 +97,10 @@ const WALLS = {
   i0: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)] }),
 };
 const ABOUT = {
-  g2: "It frames the wall it is given to the eaves - kings, jacks, headers, sills - and does not yet reach into the triangle above; the next round is for that. An 8.9-million-parameter encoder-decoder transformer trained from scratch on 40,000 walls whose top edge is not level: a ridge anywhere along the wall, at its middle, off to one side, or on an end corner, where the wall becomes a single slope. It writes each part as the two ends of its own edge, says which of its ends are cut, and the world saws them flush. Held out on 8 walls it had not seen: 83% of the script's parts, 83% of its own parts right. It runs entirely in your browser; nothing is sent anywhere.",
+  g2: "It frames the wall you outline - gable, off-centre ridge or single slope - with a plate along each slope and the studs cut to it. An 8.9-million-parameter encoder-decoder transformer trained from scratch on 40,000 walls whose top edge is not level. It writes each part as the two ends of its own edge and says which of its ends are cut; the world saws them flush, and does it the moment the thing they are cut to arrives. Held out on 40 raked walls it had not seen: a plate on every rake on 98% of them, 91% of the script's members, and one wall in five written exactly as the script would. It runs entirely in your browser; nothing is sent anywhere.",
   i0: "The designer says what timber is in the yard and the wall is framed from that and nothing else. The network reads the available sections as tokens and may write no other: an item is not a name to it but its two numbers, so a section it never saw in training is read like one it did. Turn the wall to 3D and a 45 x 245 stands visibly deeper through the wall than a 45 x 95, which is the whole of what a stock changes and the drawing cannot show. Held out on 8 walls it had not seen: 98% of the script's parts, 99% of its own parts right, 5 of the 8 walls exact. The known gap is the built-up header on a shallow stock, where nothing on its own is deep enough to span. Runs entirely in your browser; nothing is sent anywhere.",
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  x11: "The framing network after twelve rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it puts a stud under each of them – 6 mm away on the wall this page opens on, where the script's 600 mm grid leaves 266 – frames every opening on every side, carries a load standing over a door or a window on a header, and leaves nothing hanging, and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
+  x11: "The framing network after twelve rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it puts a stud under each of them – 6 mm away on the wall this page opens on, where the script's 600 mm grid leaves 266 – frames every opening on every side, carries a load standing over a door or a window on a header, and leaves nothing hanging, and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Drag the 40 kN load along the top edge and watch it answer that too: a column of studs packs together under it, and over a door or a window the header deepens to carry it. Runs entirely in your browser; nothing is sent anywhere.",
   o6: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framing came out better than before (89% of the script's parts, 93% of its own right, and 79% of training-domain walls exactly), and its block walls get about 8 in 10 blocks right - better than the network trained on both kinds of wall together. What it still gets wrong is finishing: on the longest walls it can stop before the wall is full. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
@@ -175,11 +181,13 @@ function rake(d) {
 // the way a distributed load is drawn - a line with arrows hanging from it - and set by the two numbers that describe
 // it: `off`, where the first arrow stands, and `sp`, the interval between arrows (dataset.load_grid).
 const readsLoads = () => !!MODELS.find(m => m.id === modelId).loads;
+const readsHeavy = () => !!MODELS.find(m => m.id === modelId).heavy;
 
 // the array laid out: an arrow at off + k*sp for every k that stands LEND clear of both ends of the wall. `off` is
 // wrapped into [LEND, LEND + sp), so an arrow always stands within one interval of the left end; a wall too short for
 // even that keeps its first arrow at LEND, so there is always one arrow to take hold of.
 function layLoads(d) {
+  d.kx = readsHeavy() && d.kx !== undefined ? r3(clamp(q(d.kx), LEND, Math.max(LEND, d.L - LEND))) : undefined;
   if (!readsLoads()) { d.loads = []; return d; }
   d.sp = r3(clamp(q(d.sp === undefined ? SPDEF : d.sp), SPMIN, SPMAX));
   let off = q(d.off === undefined ? OFFDEF : d.off);
@@ -192,7 +200,9 @@ function layLoads(d) {
 
 // the loads as the network reads them: one segment [x0, x1] each in the wall frame, a point load being x0 = x1
 // (dataset.loads_in_wall_frame), exactly as sequence.load_rects stacks them
-const loadSegs = d => (readsLoads() ? d.loads.map(v => [v - d.L / 2, v - d.L / 2]) : []);
+const loadSegs = d => !readsLoads() ? []
+  : [...d.loads.map(v => [v - d.L / 2, v - d.L / 2]),
+     ...(d.kx === undefined ? [] : [[d.kx - d.L / 2, d.kx - d.L / 2, HEAVY_KN]])];   // heavy last, and it says its kN
 
 // ---------------------------------------------------------------- the pattern cell, and the inventory
 // Karl: the most general way to say interlocking is not a rule about offsets but a picture - here is a window two
@@ -320,7 +330,8 @@ function randomDesign() {
     const mono = Math.random() < 0.3;
     const rk = readsRake() && design.script !== "block" && Math.random() < 0.5
       ? { pitch: mono ? U(5, 30) : U(15, 35), ridge: mono ? (Math.random() < 0.5 ? 0 : L) : L * U(0.2, 0.8) } : {};
-    return fit({ script: design.script, L, H, openings: ops, sp, off: q(U(LEND, LEND + sp)), ...rk,
+    return fit({ script: design.script, L, H, openings: ops, sp, off: q(U(LEND, LEND + sp)),
+                kx: readsHeavy() ? q(U(LEND, L - LEND)) : undefined, ...rk,
       ...(readsTemplate() ? { cell: randomCell() } : {}), ...(readsInv() ? { inv: randomInv() } : {}) });
   }
 }
@@ -330,6 +341,7 @@ function writeHash() {
   const o = design.openings.map(o => o.kind === "door" ? `d${r3(o.x)}_${r3(o.w)}_${r3(o.h)}` : `w${r3(o.x)}_${r3(o.w)}_${r3(o.h)}_${r3(o.sill)}`).join("~");
   const p = new URLSearchParams({ n: modelId, t: design.script, L: design.L, H: design.H, o });
   if (readsLoads()) p.set("l", `${r3(design.off)}_${r3(design.sp)}`);   // the load array: first arrow, then interval, in metres
+  if (readsHeavy() && design.kx !== undefined) p.set("k", r3(design.kx));   // where the heavy load stands; no `k`, no heavy load
   if (design.pitch) p.set("r", `${r3(design.pitch)},${r3(design.ridge)}`);   // the rake: the pitch in degrees, then the ridge
   // the pattern cell: one block per `~`, as `<course>:<first step>-<last step>` on the half-module lattice, so a block
   // that ends past step 4 is one that wraps round the cell's left edge. An empty `c` is a wall asked to follow nothing.
@@ -353,6 +365,8 @@ if (location.hash.length > 2) try {
     if (val.length > 2) { design.off = val[0]; design.sp = val[1] - val[0]; }
     else if (val.length) { design.off = val[0]; if (val.length > 1) design.sp = val[1]; }
   }
+  if (p.has("k")) { const v = +p.get("k"); design.kx = isFinite(v) ? v : undefined; }   // `k=<x>`; no `k`, no heavy load
+  else if (p.has("l")) design.kx = undefined;            // a link that sets the loads and no heavy one has none
   if (p.has("c")) design.cell = (p.get("c") || "").split("~").filter(Boolean).map(s => {
     const [c, span] = s.split(":"), [a, b] = (span || "").split("-").map(Number);
     return [+c, a, b - a];
@@ -591,7 +605,7 @@ function drawDim(d, held) {
   ctx.restore();
 }
 
-function drawLoads(d, on) {
+function drawLoads(d, on, onK) {
   const yTail = py(d.H + LARROW), yTip = py(d.H + LFOOT);
   ctx.save();
   ctx.strokeStyle = ctx.fillStyle = on ? "#1668d8" : BLUE;
@@ -599,6 +613,16 @@ function drawLoads(d, on) {
   ctx.beginPath(); ctx.moveTo(px(0), yTail); ctx.lineTo(px(d.L), yTail); ctx.stroke();
   ctx.lineWidth = on ? 1.9 : 1.4;
   for (const x of d.loads) arrow(px(x), yTail, yTip, 4.5);
+  if (d.kx !== undefined) {                             // the heavy load: a bigger arrow, from higher up, labelled
+    const yk = py(d.H + HARROW);
+    ctx.strokeStyle = ctx.fillStyle = onK ? "#1668d8" : BLUE;
+    ctx.lineWidth = onK ? 3.4 : 2.6;
+    arrow(px(d.kx), yk, yTip, 8);
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "1.4px";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText(`${HEAVY_KN} kN`, px(d.kx), yk - 5);
+  }
   ctx.restore();
 }
 
@@ -684,7 +708,7 @@ function paint() {
   });
   if (hot) { ctx.save(); ctx.globalAlpha = hot.a; ctx.shadowColor = "#6fb2ff"; ctx.shadowBlur = 14; outline(epoly(hot.e), [], BLUE, 2.5); outline(epoly(hot.e), [], BLUE, 2.5); ctx.restore(); }   // a lit, glowing outline   // the part just written
 
-  if (readsLoads()) { drawLoads(design, (hover || "")[0] === "l"); drawDim(design, held); }
+  if (readsLoads()) { drawLoads(design, (hover || "")[0] === "l", hover === "k"); drawDim(design, held); }
 
   outline(wallPoly(), [1, 3], "#555", 1);                // the wall's own outline, and the three crosses that size it
   cross(0, 0, 7, false);
@@ -740,6 +764,8 @@ function hit(p) {
     const c = Math.floor((my(p.y) - CELLY) / (TPL.COURSE * cs())), u = Math.floor((mx(p.x) - CELLX) / (TPL.STEP * cs()));
     if (c >= 0 && c < TPL.COURSES && u >= 0 && u < 4) return `t:${c}:${u}`;
   }
+  if (readsHeavy() && design.kx !== undefined                  // the heavy load hangs from higher up than the array
+      && p.y >= py(H + HARROW) - 9 && p.y <= py(H + LFOOT) + 5 && Math.abs(p.x - px(design.kx)) <= 12) return "k";
   if (readsLoads()) {                                    // the array lives above the wall, clear of its top edge:
     const yTail = py(H + LARROW), yTip = py(H + LFOOT);  // the line at the top, the arrows hanging below it
     if (Math.abs(p.y - yTail) <= 7 && p.x >= px(0) - 9 && p.x <= px(L) + 9) return "l";
@@ -778,7 +804,7 @@ function hit(p) {
 }
 const CURSOR = { "w:r": "ew-resize", "w:t": "ns-resize", "w:c": "nwse-resize", lb: "nesw-resize", rb: "nwse-resize",
   lt: "nwse-resize", rt: "nesw-resize", "l.": "ew-resize", "r.": "ew-resize", ".t": "ns-resize", ".b": "ns-resize",
-  move: "move", x: "pointer", l: "move", "l:0": "move", "g:a": "ns-resize", "g:r": "ew-resize" };                  // the line, and the arrow it turns about
+  move: "move", x: "pointer", l: "move", "l:0": "move", k: "ew-resize", "g:a": "ns-resize", "g:r": "ew-resize" };                  // the line, and the arrow it turns about
 const cursorFor = h => !h ? "default" : h[0] === "t" ? "pointer"
   : (CURSOR[h] || CURSOR[h.split(":")[2]] || (h[0] === "l" ? "ew-resize" : "default"));
 const at = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
@@ -810,7 +836,9 @@ canvas.addEventListener("pointermove", e => {
   if (drag.h[0] === "t") { const c = cellCol(p); if (c !== drag.col) { drag.col = c; paint(); } return; }
   const dx = mx(p.x) - mx(drag.p.x), dy = my(p.y) - my(drag.p.y);
   const O = drag.d0, d = design, h = drag.h.split(":"), edge = h[h.length - 1];
-  if (h[0] === "l") {                                    // the line shifts the whole array; an arrow sets the interval,
+  if (h[0] === "k") {                                    // the heavy load slides along the top edge, openings included
+    d.kx = q(clamp(O.kx + dx, LEND, Math.max(LEND, d.L - LEND)));
+  } else if (h[0] === "l") {                             // the line shifts the whole array; an arrow sets the interval,
     const k = h.length > 1 ? +h[1] : 0;                  // following the cursor while the first arrow stays put
     if (k === 0) { const raw = O.off + dx; d.off = magnet(raw, offTargets(raw)); }
     else { d.off = O.off; d.sp = clamp(magnet((mx(p.x) - O.off) / k, SPSNAP), SPMIN, SPMAX); }   // wrapping keeps that arrow in the array

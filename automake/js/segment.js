@@ -418,20 +418,74 @@ export function scoreElements(elems, refElems) {
     overlaps: countOverlaps(polys), pairs, extraIdx: extra, missingIdx: missing };
 }
 
-// evaluate.world_reject: the openings and whatever lies outside the outline are obstacles, and the test is the
-// separating-axis one on what each part really covers
+// evaluate.OUTLINE_TOL: how far a part may reach past the outline. A plate laid along a rake stands proud of it by
+// its own thickness at the corners - the script's own wall, not a fault (measured 1.3 mm median, 20 mm worst).
+export const OUTLINE_TOL = 0.025;
+
+// evaluate.outside_outline: how far `q` reaches beyond the wall's outline, in metres, negative when it is wholly
+// inside. The outline is convex - a rectangle, a gable's pentagon, a single slope's quadrilateral - so one signed
+// distance per edge decides it.
+export function outsideOutline(q, poly) {
+  let worst = -1e9;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const n = [b[1] - a[1], a[0] - b[0]];            // outward, the corners running counter-clockwise
+    const L = Math.hypot(n[0], n[1]);
+    if (L < 1e-12) continue;
+    let far = -Infinity;
+    for (const r of q) far = Math.max(far, (r[0] - a[0]) * n[0] + (r[1] - a[1]) * n[1]);
+    worst = Math.max(worst, far / L);
+  }
+  return worst;
+}
+
+// evaluate.world_reject / refuse_overlaps: the openings and the parts already standing are the obstacles, and the
+// test is the separating-axis one on what each part really covers.
+//
+// The outline is tested as the polygon it is, and that test REPLACES the bounding box rather than joining it: the
+// box refuses at 3 mm what the outline allows at 25, and a plate standing proud at the ridge dies on the stricter of
+// the two. Tested as bands, one band covers the whole triangle a rake plate lies in, and every rake plate on every
+// gable was refused for being outside a wall it is inside.
+//
+// And a declared cut is executed WHEN THE THING IT IS CUT TO ARRIVES, not only when the cut member is written: the
+// network writes bottom to top, so a stud is written long before the rake plate it declared its top end cut to, and
+// the plate would be refused for the space the stud is still holding. The arrival of a member trims every standing
+// part that declared a cut and meets it, and the arriving member is tested against the wall as it will be once those
+// cuts are made. The net still decides the cut; the world executes it the moment it can.
 export function refuseOverlaps(wall, obstacles, news, tol = OVERLAP_TOL, poly = null, present = []) {
-  const parts = elementPolys(present);
-  const obs = [...obstacles.map(rectPoly), ...(poly ? polyOutside(poly).map(rectPoly) : []), ...parts];
+  const fixed = obstacles.map(rectPoly);
+  let here = elementPolys(present);
+  let prior = present.map(e => [cutsOf(e[0]), elementMember(e)]);
+  let obs = [...fixed, ...here];
   const kept = [];
   for (const e of news) {
-    const m = elementMember(e);
-    let q = padPoly(memberPoly(m));
-    if (cutsOf(e[0])) q = cutPoly(q, cutsOf(e[0]), m, parts);   // sawn on what is already there, then tested
-    const r = [Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])),
-      Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))];
-    const inside = r[0] >= wall[0] - tol && r[1] >= wall[1] - tol && r[2] <= wall[2] + tol && r[3] <= wall[3] + tol;
-    if (inside && !obs.some(o => polysOverlap(q, o, tol))) { kept.push(e); obs.push(q); parts.push(q); }
+    const m = elementMember(e), raw = padPoly(memberPoly(m));
+    let q = raw;
+    if (cutsOf(e[0]) && here.length) q = cutPoly(q, cutsOf(e[0]), m, here, tol);
+    const trimmed = here.slice();
+    if (prior.length) {                              // the standing parts this arrival lets the world saw
+      prior.forEach(([jc, jm], j) => {
+        if (jc && polysOverlap(here[j], raw, tol)) {
+          const others = here.filter((_, k) => k !== j).concat([raw]);
+          trimmed[j] = cutPoly(here[j], jc, jm, others, tol);
+        }
+      });
+      obs = [...fixed, ...trimmed];
+    }
+    let inside;
+    if (poly) {
+      inside = outsideOutline(unpad(q), poly) <= OUTLINE_TOL;
+    } else {
+      const r = [Math.min(...q.map(p => p[0])), Math.min(...q.map(p => p[1])),
+        Math.max(...q.map(p => p[0])), Math.max(...q.map(p => p[1]))];
+      inside = r[0] >= wall[0] - tol && r[1] >= wall[1] - tol && r[2] <= wall[2] + tol && r[3] <= wall[3] + tol;
+    }
+    if (inside && !obs.some(o => polysOverlap(q, o, tol))) {
+      kept.push(e);
+      here = trimmed.concat([q]);                    // the cuts this arrival executed are the wall from now on
+      if (prior.length) prior = prior.concat([[cutsOf(e[0]), m]]);
+      obs = [...fixed, ...here];
+    }
   }
   return { kept, refused: news.length - kept.length };
 }

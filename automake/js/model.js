@@ -10,7 +10,7 @@
 // layer's keys and values), so they can be split over worker threads (encoder-helper.js) and still give the same numbers.
 // No dependencies. Weights are float32 in memory whatever the file stores (f32, f16, or int8 with a scale per row).
 
-import { NX, NY, Q, SECTIONS, X_MAX, Y_MAX, rint } from "./wall.js";
+import { NX, NY, POINT_KN, Q, SECTIONS, X_MAX, Y_MAX, rint } from "./wall.js";
 import { IMPLIED, MAX_POLY, N_CODE, classOf, itemOf, segBox } from "./segment.js";
 
 const f32 = Math.fround;
@@ -254,6 +254,13 @@ export class M0 {
     if (tokens !== "rect" && tokens !== "sections")
       throw new Error(`this build does not speak the "${tokens}" token format (js/segment.js does "sections")`);
     this.segment = tokens === "sections";
+    // and it must carry the weights that format implies. A checkpoint exported before the section map went deep has
+    // `sec_emb.weight` where this wants `sec_emb.0.weight`, and read its items as raw metres rather than logs. It is
+    // refused here, while the network loads, so the page leaves that artifact out (app.js dropModel) - the same safe
+    // failure as a format it does not speak. Refused later, on the first wall, the page would keep a broken artifact.
+    if (this.segment && !W["sec_emb.0.weight"])
+      throw new Error("this checkpoint predates the deeper section map (no sec_emb.0.weight): re-export it from a "
+        + "Python tree that has encode.sec_features");
     // whether it was built to read the items a design may be built from: if it was, an inventory also puts every
     // other item out of reach of the first head (MVPEditor.item_mask), which is what `itemMask` below builds.
     this.inventory = c.inventory === true;
@@ -323,12 +330,6 @@ export class M0 {
   codeTable() {
     if (this.code) return this.code;
     const { d, W } = this;
-    // A checkpoint exported before the section map went deep has `sec_emb.weight` where this wants `sec_emb.0.weight`,
-    // and read its items as raw metres rather than logs. Say so plainly rather than failing inside the arithmetic:
-    // the page then leaves that network out, as it does for a token format it does not speak.
-    if (!W["sec_emb.0.weight"])
-      throw new Error("this checkpoint predates the deeper section map (no sec_emb.0.weight): re-export it from a "
-        + "Python tree that has encode.sec_features");
     const table = this.buf("codeTable", this.nCodes * d);          // in the arena, for the WebAssembly backend
     const sec = new Float32Array(2), mid = new Float32Array(d), row = new Float32Array(d), ce = W["code_emb.weight"];
     for (let i = 0; i < this.nItems; i++) {
@@ -381,6 +382,13 @@ export class M0 {
       if (!this.segment) add(X, o, W["item_in.weight"], tok.items[i] * d);
       else if (tok.items[i] > 0) add(X, o, this.codeTable(), (tok.items[i] - 1) * d);
       add(X, o, W["brief_emb.weight"], (i === 0 ? brief : 0) * d);
+      // how heavy a load is (network.embed_rects): load_mag * log(kN / POINT_KN), which a POINT_KN load makes exactly
+      // zero, so a wall of ordinary loads is bit-for-bit what it was before the channel existed
+      const kn = tok.kn ? tok.kn[i] : 0;
+      if (kn > 0 && W["load_mag.weight"]) {
+        const m = f32(Math.log(f32(kn / POINT_KN)));
+        if (m !== 0) { const g = W["load_mag.weight"]; for (let k = 0; k < d; k++) X[o + k] = f32(X[o + k] + f32(g[k] * m)); }
+      }
       for (let f = 0; f < 4; f++) add(X, o, this.projCache[f].v, this.edgeVec(f, bins[i][f]));
     }
     // canvas: per patch, the share covered by parts, openings and the wall (row by row from the bottom left)
