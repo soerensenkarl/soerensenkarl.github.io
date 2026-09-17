@@ -13,7 +13,7 @@ const FORMAT = qs.get("format") || "f16";
 // `view3d: true` on an entry gives that artifact the 2D/3D switch and nothing else the 3D view (js/view3d.js, and the
 // three.js it fetches the first time the switch is thrown); no entry has it yet, so no page carries any of it.
 const MODELS = [
-  { id: "o4", file: "o4", name: "O4", title: "Frames, then blocks", scripts: ["frame", "block"],
+  { id: "o6", file: "o6", name: "O6", title: "Frames, then blocks", scripts: ["frame", "block"],
     blurb: "The framing network, then 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted: no framing script or framing data in that stage." },
   // `loads: true` - the network reads the loads on the wall's top edge (sequence.py TYPES index 4). Only these
   // networks are given load tokens, and only for them does the page draw, drag or link a load. (The network reads a
@@ -24,7 +24,7 @@ const MODELS = [
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
-const DEFAULT_MODEL = "o4";
+const DEFAULT_MODEL = "o6";
 
 // what the rulers and the dataset allow (metres)
 const LMIN = 1.2, LMAX = 7.9, HMIN = 2.0, HMAX = 3.15;
@@ -42,7 +42,9 @@ const SNAP = 0.015, STUD = 0.6, SPSNAP = [0.6, 0.4], EXACT = 5e-4;
 // what each artifact opens with, and what it says about itself
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
-  o4: () => ({ script: "block", L: 5.23, H: 2.69, openings: [door(0.965, 0.9, 2.1), win(2.65, 0.89, 1.2, 0.59)] }),
+  // Karl's own block wall, kept unchanged when O4 gave way to O6 on 2026-09-17: the artifact is a better network
+  // behind the same wall, so the two can be told apart by what they lay on it and by nothing else.
+  o6: () => ({ script: "block", L: 5.23, H: 2.69, openings: [door(0.965, 0.9, 2.1), win(2.65, 0.89, 1.2, 0.59)] }),
   // picked by trying: web/tests/pick_wall.mjs ranked 16 candidates and this one shows the answer to the loads most
   // plainly - every stud within 21 mm of an arrow, against 266 mm for the script's load-blind 600 mm grid on the same
   // wall, both openings headed, jacked and silled, nothing hanging, all five arrows over an opening on a header, 24 parts
@@ -52,7 +54,7 @@ const WALLS = {
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
   x10: "The framing network after eleven rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it now puts a stud under each of them – 21 mm away on the wall this page opens on, where the script's 600 mm grid leaves 266 – frames every opening on every side, carries a load standing over a door or a window on a header, and leaves nothing hanging, and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
-  o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
+  o6: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framing came out better than before (89% of the script's parts, 93% of its own right, and 79% of training-domain walls exactly), and its block walls get about 8 in 10 blocks right - better than the network trained on both kinds of wall together. What it still gets wrong is finishing: on the longest walls it can stop before the wall is full. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
 const $ = id => document.getElementById(id);
