@@ -26,7 +26,7 @@ const MODELS = [
   // outline, so the page hands it the script's own two sections and offers no control over them - `inventory` is
   // what the network is given, `picker` is whether the page lets anyone change it.
   { id: "g2", file: "g2", name: "G2", title: "Neural net that frames a wall of any outline", scripts: ["frame"],
-    segment: true, inventory: true },
+    segment: true, inventory: true, rake: true },
   // `template: true` - the network reads the pattern cell the wall is asked to follow (sequence.py TYPES index 5), so
   // the page draws the 2 x 4 window beside the wall and the user fills it in. Weights land with round T0.
   { id: "t0", file: "t0", name: "T0", title: "Neural net that follows a bond you draw", scripts: ["block"],
@@ -34,6 +34,8 @@ const MODELS = [
   // `inventory: true` - the network reads the sections the design may be built from (TYPES index 6) and may write
   // nothing else (MVPEditor.item_mask); `picker: true` puts the catalogue on the page as a row of toggles, which is
   // this artifact's whole point. `view3d: true` gives it the 2D/3D switch, where a deep section stands visibly deep.
+  // No `rake`: I0_stock was trained on rectangles alone, and on a raked outline it writes a third of the wall. The
+  // page therefore offers it no rake at all - a control that cannot act is absent - until I1 has learnt one.
   { id: "i0", file: "i0", name: "I0", title: "Neural net that adapts the frame to your inventory", scripts: ["frame"],
     segment: true, inventory: true, picker: true, view3d: true },
 ];
@@ -159,7 +161,7 @@ function fit(d) {
 // between PMIN and PMAX, and never so steep that the apex leaves the y ruler. The rise is put on a 10 mm step and the
 // pitch follows from it, as the data does it, so the wall's own corners sit on the ruler the network writes on.
 function rake(d) {
-  if (!isSegment() || !(d.pitch > 0)) { d.pitch = 0; d.ridge = null; return d; }
+  if (!readsRake() || !(d.pitch > 0)) { d.pitch = 0; d.ridge = null; return d; }
   // the ridge holds at either end of the wall and at mid-span, and is free between them
   d.ridge = r3(clamp(magnet(snap10(d.ridge == null ? d.L / 2 : d.ridge), [0, d.L / 2, d.L], MSNAP), 0, d.L));
   const mono = isMono(d), lo = mono ? MONOMIN : PMIN, up = mono ? MONOMAX : PMAX;
@@ -202,6 +204,8 @@ const readsTemplate = () => !!MODELS.find(m => m.id === modelId).template;
 const readsInv = () => !!MODELS.find(m => m.id === modelId).inventory;
 // whether the page lets anyone change that stock; a network may read one without the artifact being about it
 const showsPicker = () => !!MODELS.find(m => m.id === modelId).picker;
+// whether this network was taught a top edge that is not level; one that was not is given no rake to drag
+const readsRake = () => !!MODELS.find(m => m.id === modelId).rake;
 const TPL = SEGA.TEMPLATE;
 const steps = ([c, u, n]) => Array.from({ length: n }, (_, i) => (u + i) % TPL.COURSES);
 
@@ -314,7 +318,7 @@ function randomDesign() {
     // half of a segment network's walls are gables (dataset.train_gable_spec), pitch 15 to 35 degrees
     // half of a raked network's walls are raked; three in ten of those are a single slope, as the data draws them
     const mono = Math.random() < 0.3;
-    const rk = isSegment() && design.script !== "block" && Math.random() < 0.5
+    const rk = readsRake() && design.script !== "block" && Math.random() < 0.5
       ? { pitch: mono ? U(5, 30) : U(15, 35), ridge: mono ? (Math.random() < 0.5 ? 0 : L) : L * U(0.2, 0.8) } : {};
     return fit({ script: design.script, L, H, openings: ops, sp, off: q(U(LEND, LEND + sp)), ...rk,
       ...(readsTemplate() ? { cell: randomCell() } : {}), ...(readsInv() ? { inv: randomInv() } : {}) });
@@ -865,7 +869,7 @@ function sync() {
   if (!sw.hidden) { $("script").checked = design.script === "block"; sw.className = `sw ${design.script}`; }
   $("addDoor").hidden = $("addWindow").hidden = design.openings.length >= MAXOPS || !freeSpan(design);
   const rk = $("rake");                                  // only a segment network reads a raked top, and only on timber
-  rk.hidden = !isSegment() || design.script === "block";
+  rk.hidden = !readsRake() || design.script === "block";
   if (!rk.hidden) rk.textContent = design.pitch ? "− rake" : "+ rake";
   const iv = $("inv");                                   // the catalogue, where the artifact is about the stock
   iv.hidden = !showsPicker();
