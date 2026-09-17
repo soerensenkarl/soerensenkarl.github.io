@@ -10,9 +10,45 @@
 // layer's keys and values), so they can be split over worker threads (encoder-helper.js) and still give the same numbers.
 // No dependencies. Weights are float32 in memory whatever the file stores (f32, f16, or int8 with a scale per row).
 
-import { NX, NY, Q, X_MAX, Y_MAX, rint } from "./wall.js";
+import { NX, NY, Q, SECTIONS, X_MAX, Y_MAX, rint } from "./wall.js";
+import { IMPLIED, MAX_POLY, N_CODE, classOf, itemOf, segBox } from "./segment.js";
 
 const f32 = Math.fround;
+
+// encode.sec_features: what an item is to the network - across the member's axis what it shows in the elevation,
+// along the wall's normal what goes through it, each read as its log against the one timber width. Logs because the
+// two numbers span a factor of six and a linear map of raw metres has almost nothing to spread (round G2: the item
+// head learnt nothing while the class and the cuts learnt everything). Through float32, as numpy holds them.
+const SEC_REF = 0.045;
+export function itemSec(name) {
+  const [w, depth, lay] = SECTIONS[name], a = lay === "flat" ? w : depth, b = lay === "flat" ? depth : w;
+  return [f32(Math.log(f32(f32(a) / f32(SEC_REF)))), f32(Math.log(f32(f32(b) / f32(SEC_REF))))];
+}
+
+// erf to double precision, by the series with no cancellation in it - erf(z) = 2/sqrt(pi) e^(-z^2) sum 2^n z^(2n+1) /
+// (1.3.5...(2n+1)), every term positive, where the alternating series loses its digits - and 1 beyond |z| 6. It is
+// here for the exact GELU (torch's default, the error function and not the tanh) that the section map goes through.
+function erf(z) {
+  const a = Math.abs(z);
+  if (a > 6) return Math.sign(z);
+  let term = a, sum = a;
+  for (let n = 1; n < 200 && term > 1e-18 * sum; n++) {
+    term *= 2 * a * a / (2 * n + 1);
+    sum += term;
+  }
+  return Math.sign(z) * 1.1283791670955126 * Math.exp(-a * a) * sum;   // 2 / sqrt(pi)
+}
+const gelu = x => x * 0.5 * (1 + erf(x / Math.SQRT2));
+
+// What the encoder hands the pass, and the one shape both backends must return: `wasm.js` overrides `encode()`
+// wholesale, so a field added here would otherwise go missing there in silence - which is how the item mask reached
+// one backend and not the other. `itemOk` is the one optional field (null when the design named no stock).
+const ENCODED = ["mem", "N", "M", "bins", "cover", "crossK", "crossV", "encKey"];
+export function encoded(e) {
+  const missing = ENCODED.filter(k => e[k] === undefined);
+  if (missing.length) throw new Error(`the encoder returned no ${missing.join(", ")} (model.js encoded)`);
+  return { itemOk: null, ...e };
+}
 
 // optional timing of every stage (web/tests/profile.js, the page with ?prof): PROF.t[name] ms, PROF.n[name] calls
 export const PROF = { on: false, t: {}, n: {} };
@@ -208,7 +244,23 @@ export class M0 {
     this.items = manifest.items;
     this.d = c.d; this.heads = c.heads; this.hd = c.d / c.heads; this.dh = 4 * c.d;
     this.K = c.anchor_k; this.P = c.canvas; this.chunk = c.chunk;
-    this.nItems = manifest.items.length; this.STOP = this.nItems;
+    this.nItems = manifest.items.length;
+    // The token format the checkpoint was trained in (automake/mvp/legacy.py TOKENS). "sections": a member is a
+    // segment, a class and the ends it declares cut, an item is its own section rather than a row of weights, the
+    // skin is a polygon and the y ruler is 4.8 m, not 3.2 (js/segment.js). "rect", or none, is every network
+    // published before 2026-09-16. Anything else is refused outright rather than read as if it were one of these:
+    // the page then leaves that network out (app.js dropModel) instead of drawing a wall off the wrong weights.
+    const tokens = c.tokens || "rect";
+    if (tokens !== "rect" && tokens !== "sections")
+      throw new Error(`this build does not speak the "${tokens}" token format (js/segment.js does "sections")`);
+    this.segment = tokens === "sections";
+    // whether it was built to read the items a design may be built from: if it was, an inventory also puts every
+    // other item out of reach of the first head (MVPEditor.item_mask), which is what `itemMask` below builds.
+    this.inventory = c.inventory === true;
+    this.nCodes = this.segment ? this.nItems * N_CODE : this.nItems;
+    this.STOP = this.nCodes;
+    this.ruler = this.segment ? [X_MAX, 2.4, X_MAX, 2.4] : [X_MAX, Y_MAX, X_MAX, Y_MAX];
+    this.rulerNy = this.segment ? 960 : NY;
     const d = this.d;
     this.enc = Array.from({ length: c.enc_layers }, (_, l) => encoderLayer(W, l, d));
     this.kv = kvWeights(W, c.dec_layers, d);
@@ -223,7 +275,7 @@ export class M0 {
         w1: W[p + ".linear1.weight"], b1: W[p + ".linear1.bias"], b2: W[p + ".linear2.bias"], w2c: byColumns(W[p + ".linear2.weight"], d, this.dh) };
     });
     this.rulers = [W["x_emb.weight"], W["y_emb.weight"], W["x_emb.weight"], W["y_emb.weight"]];   // by edge x0, y0, x1, y1
-    this.rulerN = [NX, NY, NX, NY];
+    this.rulerN = [NX, this.rulerNy, NX, this.rulerNy];
     this.projCache = [0, 1, 2, 3].map(f => ({ v: new Float32Array(this.rulerN[f] * d), ok: new Uint8Array(this.rulerN[f]) }));
     this.maxT = 1 + 5 * this.chunk;
     this.cacheK = this.dec.map(() => new Float32Array(this.maxT * d));
@@ -259,22 +311,75 @@ export class M0 {
     return bin * d;
   }
 
-  static rectBins(r) {                                 // MVPEditor.rect_bins on a float32 rectangle
-    const scale = [X_MAX, Y_MAX, X_MAX, Y_MAX], n = [NX, NY, NX, NY];
+  rectBins(r) {                                        // MVPEditor.rect_bins on a float32 rectangle
+    const scale = this.ruler, n = this.rulerN;
     return r.map((v, f) => Math.min(Math.max(rint(f32(f32(v + f32(scale[f])) / f32(Q))), 0), n[f] - 1));
+  }
+
+  // MVPEditor.code_table: one vector per thing the first field can pick - the item's section through one map
+  // (`sec_emb`), its class and its cuts through one embedding (`code_emb`). Shared by the input tokens, the decoder's
+  // inputs and the output head, exactly as a ruler tick is, and nothing at all is learned per item: a section the
+  // network never saw in training is read and written like one it did. Built once, from weights that never change.
+  codeTable() {
+    if (this.code) return this.code;
+    const { d, W } = this;
+    // A checkpoint exported before the section map went deep has `sec_emb.weight` where this wants `sec_emb.0.weight`,
+    // and read its items as raw metres rather than logs. Say so plainly rather than failing inside the arithmetic:
+    // the page then leaves that network out, as it does for a token format it does not speak.
+    if (!W["sec_emb.0.weight"])
+      throw new Error("this checkpoint predates the deeper section map (no sec_emb.0.weight): re-export it from a "
+        + "Python tree that has encode.sec_features");
+    const table = this.buf("codeTable", this.nCodes * d);          // in the arena, for the WebAssembly backend
+    const sec = new Float32Array(2), mid = new Float32Array(d), row = new Float32Array(d), ce = W["code_emb.weight"];
+    for (let i = 0; i < this.nItems; i++) {
+      const s = itemSec(this.items[i]);
+      sec[0] = s[0]; sec[1] = s[1];
+      // sec_emb: Linear(2, d), exact GELU, Linear(d, d), LayerNorm(d). Read in JavaScript on either backend - the
+      // first map's input is two floats and the SIMD kernel takes eight at a time - and built once, so it costs
+      // nothing to do here. The code's own row is added last, per row of the repeated table.
+      linear(sec, 0, W["sec_emb.0.weight"], W["sec_emb.0.bias"], mid, 0, 2, d);
+      for (let k = 0; k < d; k++) mid[k] = gelu(mid[k]);
+      linear(mid, 0, W["sec_emb.2.weight"], W["sec_emb.2.bias"], row, 0, d, d);
+      layerNorm(row, 0, W["sec_emb.3.weight"], W["sec_emb.3.bias"], row, 0, d);
+      for (let c = 0; c < N_CODE; c++) {
+        const o = (i * N_CODE + c) * d, co = c * d;
+        for (let k = 0; k < d; k++) table[o + k] = row[k] + ce[co + k];
+      }
+    }
+    return (this.code = table);
+  }
+
+  // MVPEditor.item_mask: which of the first head's codes the design allows - every code of every item in its own
+  // inventory, and STOP, always. The inventory tokens say which items those are (type 6, the item on the same code a
+  // member carries), so nothing beyond the tokens has to travel. null when there is nothing to mask.
+  itemMask(tok) {
+    if (!this.inventory) return null;
+    const want = new Set();
+    for (let i = 0; i < tok.types.length; i++) if (tok.types[i] === 6) want.add(itemOf(tok.items[i] - 1));
+    if (!want.size) return null;                        // a design with no inventory of its own may use every item
+    const ok = new Uint8Array(this.nCodes + 1);         // whatever a code packs besides the item, the format says so
+    for (let c = 0; c < this.nCodes; c++) if (want.has(itemOf(c))) ok[c] = 1;
+    ok[this.nCodes] = 1;
+    return ok;
   }
 
   // the box tokens and the canvas as vectors (M x d), their tick bins, the canvas cover
   embed(tok, brief) {
     const { d, W, P } = this;
-    const N = tok.types.length, gx = NX / P, gy = NY / P, G = gx * gy, M = N + G;
+    const NYr = this.rulerNy;
+    const N = tok.types.length, gx = NX / P, gy = NYr / P, G = gx * gy, M = N + G;
     const X = new Float32Array(M * d);
-    const bins = tok.rects.map(M0.rectBins);
+    const bins = tok.rects.map(r => this.rectBins(r));
+    // what each token fills: a segment token grown by its thickness (sequence.token_boxes), any other one as it is
+    const boxBins = this.segment ? tok.rects.map((r, i) => this.rectBins(segBox(r, tok.thick[i]))) : bins;
+    const inside = this.segment ? this.insidePoly(tok, bins, gx, gy, P) : null;
     const add = (dst, o, src, so) => { for (let k = 0; k < d; k++) dst[o + k] += src[so + k]; };
     for (let i = 0; i < N; i++) {
       const o = i * d;
       add(X, o, W["type_emb.weight"], tok.types[i] * d);
-      add(X, o, W["item_in.weight"], tok.items[i] * d);
+      // the code a token carries, on the same table the head picks from; token item 0 ("none") is a zero row
+      if (!this.segment) add(X, o, W["item_in.weight"], tok.items[i] * d);
+      else if (tok.items[i] > 0) add(X, o, this.codeTable(), (tok.items[i] - 1) * d);
       add(X, o, W["brief_emb.weight"], (i === 0 ? brief : 0) * d);
       for (let f = 0; f < 4; f++) add(X, o, this.projCache[f].v, this.edgeVec(f, bins[i][f]));
     }
@@ -286,8 +391,8 @@ export class M0 {
       let cp = 0, co = 0, cw = 0;
       for (let i = 0; i < N; i++) {
         const t = tok.types[i];
-        if (t > 2) continue;
-        const b = bins[i];
+        if (t > 2 || (this.segment && t === 0)) continue;   // the wall's own share is the outline's, measured below
+        const b = boxBins[i];
         const ox = Math.max(Math.min(b[2], px0 + P) - Math.max(b[0], px0), 0);
         if (!ox) continue;
         const oy = Math.max(Math.min(b[3], py0 + P) - Math.max(b[1], py0), 0);
@@ -295,13 +400,38 @@ export class M0 {
         const share = f32(f32(ox * oy) / (P * P));
         if (t === 2) cp = f32(cp + share); else if (t === 1) co = f32(co + share); else cw = f32(cw + share);
       }
+      if (this.segment) cw = inside[g];
       cover[g * 3] = cp; cover[g * 3 + 1] = co; cover[g * 3 + 2] = cw;
       const o = (N + g) * d;
       for (let k = 0; k < d; k++) X[o + k] = ct[k] + (ci[k * 3] * cp + ci[k * 3 + 1] * co + ci[k * 3 + 2] * cw + cb[k]);
-      const edges = [px0, py0, Math.min(px0 + P, NX - 1), Math.min(py0 + P, NY - 1)];
+      const edges = [px0, py0, Math.min(px0 + P, NX - 1), Math.min(py0 + P, NYr - 1)];
       for (let f = 0; f < 4; f++) add(X, o, this.projCache[f].v, this.edgeVec(f, edges[f]));
     }
     return { X, N, M, bins, cover };
+  }
+
+  // MVPEditor._inside_poly: the share of each patch that lies inside the skin's outline, by ray crossing over the
+  // outline's edge tokens (the first MAX_POLY, type 0), sampled CANVAS_SUB x CANVAS_SUB per patch
+  insidePoly(tok, bins, gx, gy, P) {
+    const S = 4, G = gx * gy, out = new Float32Array(G);
+    const e = [];
+    for (let i = 0; i < Math.min(MAX_POLY, tok.types.length); i++) if (tok.types[i] === 0) e.push(bins[i]);
+    const step = Array.from({ length: S }, (_, i) => (i + 0.5) * (P / S));
+    for (let row = 0, g = 0; row < gy; row++) for (let col = 0; col < gx; col++, g++) {
+      let hit = 0;
+      for (const dx of step) for (const dy of step) {
+        const px = col * P + dx, py = row * P + dy;
+        let c = 0;
+        for (const [x0, y0, x1, y1] of e) {
+          if ((y0 <= py) === (y1 <= py)) continue;
+          const dyy = Math.abs(y1 - y0) < 1e-9 ? 1.0 : y1 - y0;
+          if (px < x0 + (py - y0) * (x1 - x0) / dyy) c++;
+        }
+        if (c % 2 === 1) hit++;
+      }
+      out[g] = f32(hit / (S * S));
+    }
+    return out;
   }
 
   // the encoder, then the pass's keys and values. pool: an EncoderPool (pool.js) or null; split (tests only): process the rows
@@ -349,7 +479,7 @@ export class M0 {
       if (prof) profAdd("helpers.compute", r.ms);
     }
     tick("enc.waiting for helpers");
-    return { mem, N, M, bins, cover, crossK, crossV, encKey };
+    return encoded({ mem, N, M, bins, cover, crossK, crossV, encKey, itemOk: this.itemMask(tok) });
   }
 
   // one decoder step with the key/value cache: the embedding of the next position in, its final state out
@@ -403,12 +533,16 @@ export class M0 {
     const prof = PROF.on;
     const step = this.makeStep(enc);
     const fe = W["field_emb.weight"];
+    // MVPEditor._value_emb: a pick's own vector, from the table its field is scored against - the code table for the
+    // first field, the field's ruler for the other four - plus that field's mark
+    const codes = this.segment ? this.codeTable() : W["item_out.weight"];
     const valueEmb = (f, v, out) => {
-      const table = f === 0 ? W["item_out.weight"] : this.rulers[f - 1];
+      const table = f === 0 ? codes : this.rulers[f - 1];
       for (let k = 0; k < d; k++) out[k] = table[v * d + k] + fe[f * d + k];
       return out;
     };
-    const itemLogits = this.buf("itemLogits", this.nItems + 1), u = this.buf("u", d), qa = this.buf("qa", d);
+    const itemLogits = new Float64Array(this.nCodes + 1), u = this.buf("u", d), qa = this.buf("qa", d);
+    const rectLogits = this.segment ? null : this.buf("itemLogits", this.nCodes + 1), stopL = this.buf("stopL", 1);
     const offL = this.buf("offL", 2 * K + 1), off = new Float64Array(2 * K + 1), gateL = this.buf("gateL", 1);
     const ruler = new Float64Array(NX), copy = new Float64Array(NX), hist = new Float64Array(NX);
     const cap = 2 * N + 2 * this.chunk + 2, sc = new Float64Array(cap), vals = new Int32Array(cap);
@@ -421,9 +555,21 @@ export class M0 {
         let th = prof ? now() : 0;
         const hseg = name => { if (prof) { const t2 = now(); profAdd(name, t2 - th); th = t2; } };
         if (f === 0) {
-          this.lin(hs, 0, W["item_head.weight"], W["item_head.bias"], itemLogits, 0, d, this.nItems + 1);
+          if (this.segment) {
+            // the head is tied to the code table, as the ruler heads are to their ticks; STOP is the one class with
+            // no section behind it and has a head of its own (MVPEditor._head)
+            this.lin(hs, 0, W["item_proj.weight"], W["item_proj.bias"], u, 0, d, d);
+            this.rulerLogits(u, codes, this.nCodes, itemLogits);
+            this.lin(hs, 0, W["stop_head.weight"], W["stop_head.bias"], stopL, 0, d, 1);
+            itemLogits[this.nCodes] = stopL[0];
+          } else {
+            this.lin(hs, 0, W["item_head.weight"], W["item_head.bias"], rectLogits, 0, d, this.nCodes + 1);
+            for (let i = 0; i <= this.nCodes; i++) itemLogits[i] = rectLogits[i];
+          }
+          // what the design has not got is out of reach, for the pick and for the probabilities alike (_masked)
+          if (enc.itemOk) for (let i = 0; i <= this.nCodes; i++) if (!enc.itemOk[i]) itemLogits[i] = -Infinity;
           let v = 0;
-          for (let i = 1; i <= this.nItems; i++) if (itemLogits[i] > itemLogits[v]) v = i;
+          for (let i = 1; i <= this.nCodes; i++) if (itemLogits[i] > itemLogits[v]) v = i;
           hseg("head.item");
           if (v === this.STOP) return;
           elem[0] = v;
@@ -493,7 +639,13 @@ export class M0 {
         for (let t = a0; t <= a1; t++) { const p = g1 * ruler[t] + g * copy[t]; if (p > best) { best = p; v = t; } }
         for (let t = a1 + 1; t < n; t++) { const p = g1 * ruler[t]; if (p > best) { best = p; v = t; } }
         hseg("head.mixture (histogram, offsets, argmax)");
-        if (detail) picks.push(this.pickDetail(f, v, g, ruler, copy, a0, a1, sc, vals, S, N, off, wr));
+        // the coordinate this class implies is copied, not picked (MVPEditor._implied): a horizontal member's y1 is
+        // its y0, a vertical member's x1 is its x0. Three picks for an axis-aligned member, four for a rotated one.
+        const imp = this.segment ? IMPLIED[classOf(elem[0])] : null;
+        const implied = imp && imp[0] === f;
+        if (implied) v = elem[imp[1]];
+        if (detail) picks.push(implied ? { f, v, implied: true }
+          : this.pickDetail(f, v, g, ruler, copy, a0, a1, sc, vals, S, N, off, wr));
         hseg("head.pick detail for the page");
         for (let s = 0; s < S; s++) hist[vals[s]] = 0;
         elem[f] = v;

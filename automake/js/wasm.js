@@ -6,7 +6,8 @@
 // else everything runs on the model's thread. Softmax stays in JS (WebAssembly has no exp). The picks, the anchor mixture,
 // the canvas, free space and the world are model.js / wall.js as before.
 import { EncoderPool } from "./pool.js";
-import { M0, PROF, profAdd, ranges, tensorData } from "./model.js";
+import { M0, PROF, encoded, profAdd, ranges, tensorData } from "./model.js";
+import { N_CODE } from "./segment.js";
 import { NX } from "./wall.js";
 
 const SIMD_PROBE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]);
@@ -75,9 +76,11 @@ export class M0Wasm extends M0 {
   static create(manifest, buffer, module, { shared = false, helpers = 0, Mmax = 1536 } = {}) {
     const c = manifest.config, d = c.d, dh = 4 * d, heads = c.heads, maxT = 1 + 5 * c.chunk, threads = helpers + 1;
     const tensorFloats = manifest.tensors.reduce((a, t) => a + t.shape.reduce((x, y) => x * y, 1), 0);
+    // the code table is built in the arena too: one row per thing the first head can pick (model.js codeTable)
+    const nCodes = manifest.items.length * (c.tokens === "sections" ? N_CODE : 1);
     const floats = tensorFloats + (c.enc_layers + c.dec_layers) * d * dh + 2 * c.dec_layers * maxT * d
       + (6 + 2 * c.dec_layers + 2) * Mmax * d + threads * (CH * heads * Mmax + 2 * CH * d + dh)
-      + 10 * d + dh + heads * Math.max(Mmax, maxT) + NX + Mmax + (4 * c.chunk + 1) * d + (1 << 16);
+      + 10 * d + dh + heads * Math.max(Mmax, maxT) + NX + Mmax + (4 * c.chunk + 1) * d + nCodes * d + (1 << 16);
     const pages = Math.ceil((4 * floats + 256) / 65536) + 1;
     const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared });
     const instance = new WebAssembly.Instance(module, { env: { memory } });
@@ -207,7 +210,9 @@ export class M0Wasm extends M0 {
     for (const [lo, hi] of mine) stageKV(k, this.kvP, B, lo, hi, N, d);
     tick("pass.cross keys/values + anchor keys");
     await wait(jobs);
-    return { mem: this.act.mem, N, M, bins, cover, crossK: this.act.crossK, crossV: this.act.crossV, encKey: this.act.encKey };
+    // through model.js's own `encoded`, so a field it grows cannot go missing here in silence
+    return encoded({ mem: this.act.mem, N, M, bins, cover, crossK: this.act.crossK, crossV: this.act.crossV,
+      encKey: this.act.encKey, itemOk: this.itemMask(tok) });
   }
 }
 

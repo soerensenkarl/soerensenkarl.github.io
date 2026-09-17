@@ -7,9 +7,11 @@
 // or with ?backend=js.
 //
 // in:  {type: "load", url, file, format, backend, threads}  -> {type: "progress", loaded, total} ..., {type: "ready", backend, ...}
-//      {type: "run", id, wall, ops, start, brief, reject, loads (segments)} -> {type: "encode"|"encoded"|"part"|"pass", id, ...}, {type: "done", id, ...}
+//      {type: "run", id, wall, ops, start, brief, reject, loads (segments), cell (the template's blocks), inv (item names)}
+//        -> {type: "encode"|"encoded"|"part"|"pass", id, ...}, {type: "done", id, ...}
 //      {type: "cancel"}
 import { M0, PROF, profReset } from "./model.js";
+import { setItems } from "./wall.js";
 import { EncoderPool } from "./pool.js";
 import { M0Wasm, WasmPool, simdSupported } from "./wasm.js";
 import { writeWall } from "./writer.js";
@@ -83,10 +85,11 @@ async function load(msg) {
   }
   if (token !== loading) { if (nextPool) nextPool.terminate(); return; }
   model = next; pool = nextPool; backend = nextBackend;
-  const { config, items, params, trained, commit, name, run, format, minutes, script } = manifest;
+  setItems(manifest.items, manifest.sections);   // this network's vocabulary, in its order, with its own sections
+  const { config, items, sections, params, trained, commit, name, run, format, minutes, script } = manifest;
   self.postMessage({ type: "ready", file: msg.file, fetchMs: tFetch, parseMs: tParse, poolMs: performance.now() - t0 - tFetch - tParse,
     helpers: pool ? pool.size : 0, bytes: buffer.byteLength, backend, isolated: self.crossOriginIsolated === true,
-    manifest: { config, items, params, trained, commit, name, run, format, minutes, script } });
+    manifest: { config, items, sections, params, trained, commit, name, run, format, minutes, script } });
 }
 
 async function run(msg) {
@@ -95,8 +98,10 @@ async function run(msg) {
   profReset(!!msg.prof);
   const t0 = performance.now();
   let firstPart = null, parts = 0;
-  const gen = writeWall(model, { wall: msg.wall, ops: msg.ops, start: msg.start, brief: msg.brief, reject: msg.reject,
-    loads: msg.loads || [], detail: true, pool });
+  // the page names its inventory by section, the network by index: the vocabulary it was trained on says which is which
+  const inv = msg.inv ? msg.inv.map(n => model.items.indexOf(n)).filter(i => i >= 0) : null;
+  const gen = writeWall(model, { wall: msg.wall, ops: msg.ops, skin: msg.skin, poly: msg.poly, start: msg.start,
+    brief: msg.brief, reject: msg.reject, loads: msg.loads || [], cell: msg.cell || null, inv, detail: true, pool });
   let r;
   for (;;) {
     r = await gen.next();

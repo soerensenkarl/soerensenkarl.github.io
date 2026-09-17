@@ -25,16 +25,22 @@ button, select { font: inherit; font-size: 13px; line-height: 1.2; color: #111; 
 select { padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, #111 50%), linear-gradient(135deg, #111 50%, transparent 50%);
   background-position: right 17px center, right 13px center; background-size: 4px 4px; background-repeat: no-repeat }
 button:hover { border-color: #bbb }
+/* the inventory: one small toggle per section of the timber catalogue, black where the design has that section */
+#inv { justify-content: center; gap: 6px }
+#inv button { padding: 7px 13px; font-size: 12px; color: #9a9a95 }
+#inv button.on { background: #111; border-color: #111; color: #fff }
+#inv[hidden] { display: none }
 .sw { display: inline-flex; align-items: center; gap: 9px; padding: 0 4px; cursor: pointer;
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #c3c3be; -webkit-user-select: none; user-select: none }
-.sw.off .t, .sw.on .b { color: #111 }
-.sw input { appearance: none; -webkit-appearance: none; position: relative; margin: 0; width: 50px; height: 30px; flex: none;
+.sw.frame .t, .sw.block .b, .sw.off .t, .sw.on .b { color: #111 }
+.sw[hidden] { display: none }
+#script, #view { appearance: none; -webkit-appearance: none; position: relative; margin: 0; width: 50px; height: 30px; flex: none;
   border-radius: 999px; background: #e2e2de; cursor: pointer; transition: background .15s ease }
-.sw input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+#script::after, #view::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
   background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .15s ease }
-.sw input:checked { background: #111 }
-.sw input:checked::after { transform: translateX(20px) }
-button:focus-visible, select:focus-visible, .sw input:focus-visible { outline: 2px solid #111; outline-offset: 2px }
+#script:checked, #view:checked { background: #111 }
+#script:checked::after, #view:checked::after { transform: translateX(20px) }
+button:focus-visible, select:focus-visible, #script:focus-visible, #view:focus-visible { outline: 2px solid #111; outline-offset: 2px }
 footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .06em; padding: 10px 0 }
 @media (max-width: 620px) {
   body { padding-left: 12px; padding-right: 12px }
@@ -60,10 +66,12 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
       <button id="addDoor" type="button">+ door</button>
       <button id="addWindow" type="button">+ window</button>
       <button id="random" type="button">↻ random</button>
-      <label class="sw off" id="sw"><span class="t">timber</span><input type="checkbox" id="script" aria-label="Build concrete blocks instead of a timber frame"><span class="b">blocks</span></label>
+      <button id="rake" type="button">+ rake</button>
       <label class="sw off" id="vsw"><span class="t">2D</span><input type="checkbox" id="view" aria-label="See the wall in three dimensions"><span class="b">3D</span></label>
+      <label class="sw" id="sw"><span class="t">timber</span><input type="checkbox" id="script" aria-label="Build concrete blocks instead of a timber frame"><span class="b">blocks</span></label>
     </div>
   </div>
+  <div class="pills" id="inv" hidden></div>
   <p id="about" hidden></p>
 </main>
 <footer>© 2026 Karl-Johan Sørensen</footer>

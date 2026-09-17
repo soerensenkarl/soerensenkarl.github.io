@@ -5,7 +5,11 @@
 //
 // The 2D drawing stays the editing surface; here the wall only turns. three.js (UMD, pinned) is fetched the first time
 // this view is opened and never again, so an artifact that does not offer 3D pays nothing for it.
-import { ITEMS, SECTIONS } from "./wall.js";
+//
+// It knows nothing of either token format: the page hands it each part already read as a member - where it stands, how
+// long it is, the face it shows, the depth that goes through the wall, and the angle it lies at - and the wall's own
+// outline as a polygon, so a raked wall is no special case. One thing a box cannot say is a declared cut: a cut part
+// is drawn here at its full written length, and the 2D drawing stays the exact one.
 
 const SRC = "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.159.0/three.min.js";
 const BLUE = 0x3b8cff;
@@ -44,15 +48,12 @@ function woodTexture() {
   return t;
 }
 
-// an element as a box: its length, the face the drawing shows, and the depth the drawing cannot show. The section says
-// which is which - the in-plane dimension is one of the item's two, so the other one goes through the wall.
-function boxOf(e, b) {
-  const [w, d] = SECTIONS[ITEMS[e[0]]];
-  const dx = b[2] - b[0], dy = b[3] - b[1], up = dy > dx;
-  const len = up ? dy : dx, face = up ? dx : dy;
-  return { x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2, len, face, deep: Math.abs(face - d) < Math.abs(face - w) ? w : d, up };
+// a member as a box: its length along its own axis, the face the drawing shows across it, and the depth that goes
+// through the wall - the item's other dimension, whichever of the two the elevation is not already showing
+function boxOf(m) {
+  return { x: m.x, y: m.y, len: m.L, face: m.thick, deep: m.thick === m.w ? m.depth : m.w, ang: m.ang };
 }
-const kindOf = e => (ITEMS[e[0]] === "block" ? "block" : ITEMS[e[0]] === "lintel" ? "lintel" : "timber");
+const kindOf = m => (m.item === "block" ? "block" : m.item === "lintel" ? "lintel" : "timber");
 
 export async function init(canvas) {
   T = await loadThree();
@@ -104,7 +105,7 @@ export async function init(canvas) {
   // a part's place in the world: its length along its own axis, its drawn face, and its depth through the wall
   const boxMatrix = (b, grow) => {
     pos.set(b.x, b.y, 0);
-    rot.setFromAxisAngle(UP, b.up ? Math.PI / 2 : 0);
+    rot.setFromAxisAngle(UP, b.ang);                       // whatever angle it lies at: a rake plate turns like any other
     scl.set(b.len + grow, b.face + grow, b.deep + grow);
     return m4.compose(pos, rot, scl);
   };
@@ -133,13 +134,15 @@ export async function init(canvas) {
 
   // the wall's pane and the holes in it, rebuilt only when the design changes
   let skinKey = "";
-  function setSkin(L, H, openings, back) {
-    const key = `${L}|${H}|${back}|${openings.map(o => [o.x, o.w, o.sill, o.h].join()).join("~")}`;
+  function setSkin(poly, openings, back) {
+    const key = `${poly.map(p => p.join()).join("~")}|${back}|${openings.map(o => [o.x, o.w, o.sill, o.h].join()).join("~")}`;
     if (key === skinKey) return;
     skinKey = key;
     skin.clear();
-    const shape = new T.Shape([[0, 0], [L, 0], [L, H], [0, H]].map(([x, y]) => new T.Vector2(x, y)));
-    const rects = [[0, 0, L, H]];
+    const shape = new T.Shape(poly.map(([x, y]) => new T.Vector2(x, y)));
+    const rects = [];
+    skin.add(new T.Line(new T.BufferGeometry().setFromPoints(          // the outline itself, four corners or five
+      [...poly, poly[0]].map(([x, y]) => new T.Vector3(x, y, -back + 0.001))), edgeMat));
     for (const o of openings) {
       const y0 = o.kind === "door" ? 0 : o.sill, r = [o.x, y0, o.x + o.w, y0 + o.h];
       rects.push(r);
@@ -179,23 +182,23 @@ export async function init(canvas) {
   }
 
   function draw(st) {
-    const { design, parts, hot, ebox, showLoads } = st;
+    const { design, parts, hot, member, poly, top, showLoads } = st;
     resize();
     const deep = design.script === "block" ? 0.19 : 0.095;
-    setSkin(design.L, design.H, design.openings, deep / 2 + 0.004);
+    setSkin(poly, design.openings, deep / 2 + 0.004);
     setLoads(design, showLoads);
-    view = { L: design.L, H: design.H, top: showLoads ? design.H + LARROW + 0.18 : design.H + 0.14 };
+    view = { L: design.L, H: top, top: showLoads ? design.H + LARROW + 0.18 : top + 0.14 };
 
     const n = { timber: 0, block: 0, lintel: 0 };
     for (const e of parts) {
-      const k = kindOf(e);
-      bins[k].setMatrixAt(n[k]++, boxMatrix(boxOf(e, ebox(e)), 0));
+      const m = member(e), k = kindOf(m);
+      bins[k].setMatrixAt(n[k]++, boxMatrix(boxOf(m), 0));
     }
     for (const k of Object.keys(bins)) { bins[k].count = Math.min(CAP, n[k]); bins[k].instanceMatrix.needsUpdate = true; }
 
     hotBox.visible = hotEdge.visible = !!hot;
     if (hot) {
-      hotBox.matrix.copy(boxMatrix(boxOf(hot.e, ebox(hot.e)), 0.012));
+      hotBox.matrix.copy(boxMatrix(boxOf(member(hot.e)), 0.012));
       hotEdge.matrix.copy(hotBox.matrix);
       hotBox.matrixWorldNeedsUpdate = hotEdge.matrixWorldNeedsUpdate = true;
       hotMat.opacity = 0.38 * hot.a;

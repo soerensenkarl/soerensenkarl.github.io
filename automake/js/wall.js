@@ -10,18 +10,52 @@
 //
 // Numbers follow the Python arithmetic, including where numpy works in float32 (Math.fround), so edges round to the same ticks.
 
-export const Q = 0.005, X_MAX = 4.0, Y_MAX = 1.6, NX = 1600, NY = 640;
+export const Q = 0.005, X_MAX = 4.0, Y_MAX = 1.6, NX = 1600, NY = 640;   // the rectangle format's rulers
+// The timber catalogue (automake/world/materials.py TIMBER): one width, six depths, each section usable either way up
+// - laid flat its width shows in the elevation, on edge its depth. The suffix on a name says how it lies when that is
+// not the way the framing script has always used it.
+export const TIMBER_WIDTH = 0.045;
+export const TIMBER = [[0.070, "2x3", "2x3e"], [0.095, "2x4", "2x4e"], [0.120, "2x5", "2x5e"],
+  [0.145, "2x6f", "2x6"], [0.170, "2x7f", "2x7"], [0.195, "2x8f", "2x8"], [0.245, "2x10f", "2x10"],
+  [0.295, "2x12f", "2x12"]];    // depth, the name flat, the name on edge (materials.TIMBER, all eight sections:
+// 120 and 170 are never drawn into a training stock - materials.UNSEEN - but the network can still write them, so
+// the engine has to know their sections or setItems would refuse a checkpoint that lists them.
+// The network's own vocabulary, in its own order: whatever the checkpoint was trained on (`setItems`, from the
+// manifest). It opens as the vocabulary every network published before the catalogue grew was trained on.
 export const ITEMS = ["2x4", "2x6", "2x8", "2x10", "2x12", "block", "lintel"];
-export const SECTIONS = { "2x4": [0.045, 0.095], "2x6": [0.045, 0.145], "2x8": [0.045, 0.195], "2x10": [0.045, 0.245],
-  "2x12": [0.045, 0.295], block: [0.19, 0.19], lintel: [0.19, 0.19] };
-const LENGTHS = { "2x4": [0.05, 6.0], "2x6": [0.05, 6.0], "2x8": [0.05, 6.0], "2x10": [0.05, 6.0], "2x12": [0.05, 6.0],
-  block: [0.095, 0.39], lintel: [0.1, 8.0] };
+// width, depth and the lay (encode.sections): how the section sits when the member is not standing on end - "flat",
+// its width in the elevation, or "edge", its depth. The rectangle format reads only the first two.
+export const SECTIONS = { block: [0.19, 0.19, "flat"], lintel: [0.19, 0.19, "flat"] };
+const LENGTHS = { block: [0.095, 0.39], lintel: [0.1, 8.0] };
+for (const [depth, flat, edge] of TIMBER) {
+  SECTIONS[flat] = [TIMBER_WIDTH, depth, "flat"]; SECTIONS[edge] = [TIMBER_WIDTH, depth, "edge"];
+  LENGTHS[flat] = [0.05, 6.0]; LENGTHS[edge] = [0.05, 6.0];
+}
+
+// A checkpoint says which items it writes and in what order (`manifest.items`), so the engine follows it instead of
+// keeping a list of its own: worker.js sets it the moment a network loads, the Node tests from the fixtures' `items`.
+export function setItems(names, sections = null) {
+  // a manifest carries its own sections too (export_web_model.py), so a checkpoint trained on a catalogue this file
+  // has never heard of runs unchanged; without them, the names have to be ones it already knows
+  for (const [n, s] of Object.entries(sections || {})) if (!(n in SECTIONS)) SECTIONS[n] = s;
+  const miss = (names || []).filter(n => !(n in SECTIONS));
+  if (miss.length) throw new Error(`items with no section (wall.js SECTIONS): ${miss.join(", ")}`);
+  ITEMS.length = 0;
+  ITEMS.push(...names);
+}
 export const OVERLAP_TOL = 0.003, FREE_GAP = 0.006, FREE_MIN = 0.03;
-export const TYPES = ["wall", "opening", "part", "free", "load"];   // "load": a point or line load on the top edge (sequence.TYPES)
+// sequence.TYPES, as far as the rectangle format goes; the segment format adds "template" and "inventory" (segment.js)
+export const TYPES = ["wall", "opening", "part", "free", "load"];
 export const LOAD = 4;
 export const BRIEFS = { frame: 1, block: 2 };
 const TOL_CONTACT = 0.003, KEEPOUT_EXTRA = 0.05, WALL_DEPTH = 0.095;
 const f32 = Math.fround;
+
+// The two token formats the page can run. "rect": every network published before 2026-09-16 - a member is a rectangle
+// on a 8 x 3.2 m ruler. "segment": a member is a segment and a class and the skin is a polygon, on a 8 x 4.8 m ruler
+// (js/segment.js). `api(format)` gives the geometry of one of them; a model says which it speaks.
+// The rectangle half of this file goes when the published lineage has been retrained (web/automake/PUBLISHING.md).
+export const FORMATS = ["rect", "segment"];
 
 // ---------------------------------------------------------------- rounding as Python and numpy round
 export function rint(x) {                       // numpy rint / torch.round: half to even
@@ -36,13 +70,16 @@ const npRound6 = x => rint(x * 1e6) / 1e6;       // numpy round(x, 6)
 // ---------------------------------------------------------------- the scene: a wall and its openings
 // spec: {L, H, openings: [[x from the left end, width, sill, height], ...]} (sill 0 = a door)
 export function makeScene(spec) {
-  const L = spec.L, H = spec.H;
+  const L = spec.L;
+  const gable = spec.pitch > 0;
+  const ridgeX = gable ? (spec.ridge == null ? L / 2 : spec.ridge) : 0;
+  const H = gable ? ridgeYOf(L, spec.H, spec.pitch, ridgeX) : spec.H;
   const raw = (spec.openings || []).map(o => o.slice(0, 4).map(Number));
   raw.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]);
   const oz = H / 2;                             // the wall frame's origin height in the world
   const openings = raw.map((o, k) => {
     let [x0, w, sill, h] = o;
-    if (k === 0) {                              // make_wall_scene clamps the first opening (clamp_opening)
+    if (k === 0 && !gable) {                    // make_wall_scene clamps the first opening (clamp_opening)
       w = Math.max(0.1, Math.min(w, L));
       x0 = Math.min(Math.max(x0, 0.0), L - w);
       sill = Math.max(0.0, Math.min(sill, H - 0.1));
@@ -53,10 +90,13 @@ export function makeScene(spec) {
     const wz = cy + oz;                         // world height of the centre
     return { spec: [x0, w, sill, h], cx, cy: wz - oz, wz, hw: w / 2, hh: h / 2, w, h };
   });
-  return { L, H, hx: L / 2, hy: H / 2, oz, openings };
+  const poly = gable ? SEG.gablePoly(L, H, ridgeX, spec.H) : null;   // one outline builder, segment.js's
+  return { L, H, hx: L / 2, hy: H / 2, oz, openings, poly, gable, ridgeX, pitch: spec.pitch || 0, eaves: spec.H };
 }
 
 // ---------------------------------------------------------------- parts as placed by a script
+function ridgeYOf(L, eaves, pitch, ridgeX) { return eaves + Math.max(ridgeX, L - ridgeX) * Math.tan(pitch * Math.PI / 180); }
+
 function makePart(sc, item, orient, x, y, length, label) {
   const [lo, hi] = LENGTHS[item];
   const len = Math.min(Math.max(length, lo), hi);          // Item.resolve clamps free lengths
@@ -245,18 +285,41 @@ export function skinRects(skin) {
 }
 
 // build_wall + wall_members + elements_of + canonical order: the script's wall as elements
-export function buildWall(spec, script) {
+export function buildWall(spec, script, format = "rect") {
   const sc = makeScene(spec);
+  if (sc.gable || format === "segment") {
+    const parts = sc.gable ? SEG.gableWall(sc, arange, openingsLocal)
+      : (script === "block" ? layBlocks(sc) : frameWall(sc)).map(p =>
+        SEG.placed(p.item, p.orient === 0 ? Math.PI / 2 : 0, p.x, p.wz - sc.oz, p.length, p.label));
+    const { kept, dropped } = SEG.dropOverlapsPoly(sc, parts, TOL_CONTACT);
+    const elems = kept.map(SEG.partElement);
+    const order = canonicalOrder(elems);
+    const skin = SEG.skinFeatures(sc);
+    return { scene: sc, format: "segment", skin, ...SEG.skinRects(skin), poly: SEG.skinPoly(skin),
+      elements: order.map(i => elems[i]), labels: order.map(i => kept[i].label), dropped };
+  }
   const placed = script === "block" ? layBlocks(sc) : frameWall(sc);
   const { kept, dropped } = dropOverlaps(sc, placed);
   const elems = kept.map(p => partElement(sc, p));
   const order = canonicalOrder(elems);
   const skin = skinOf(sc);
-  return { scene: sc, skin, ...skinRects(skin), elements: order.map(i => elems[i]), labels: order.map(i => kept[i].label), dropped };
+  return { scene: sc, format: "rect", skin, ...skinRects(skin), poly: null,
+    elements: order.map(i => elems[i]), labels: order.map(i => kept[i].label), dropped };
+}
+
+// The geometry of one format: what `writer.js`, `app.js` and the tests call, so neither has to know which is in use.
+// Both answer elementRect / elementMember / elementPoly / tokens / refuseOverlaps / scoreElements / countOverlaps.
+export function api(format = "rect") {
+  return format === "segment" ? SEG : RECT_API;
 }
 
 export function elementRect(e) {                 // element_rects: metres, through float32
   return [f32(e[1] * 0.005 - X_MAX), f32(e[2] * 0.005 - Y_MAX), f32(e[3] * 0.005 - X_MAX), f32(e[4] * 0.005 - Y_MAX)];
+}
+
+export function elementPoly(e) {                 // the four corners it covers - a rectangle, in this format
+  const r = elementRect(e);
+  return [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
 }
 
 export function elementMember(e) {               // elements_to_members: item, orient, centre, length
@@ -385,3 +448,10 @@ export function freeRects(rects, types) {
   out = out.filter((r, i) => i === 0 || r.some((v, m) => v !== out[i - 1][m]));
   return out.map(r => r.map(f32));
 }
+
+// the rectangle format's own answers, gathered so `api()` can hand either one out
+import * as SEG from "./segment.js";
+const RECT_API = { elementRect, elementMember, elementPoly, elementPolys: es => es.map(elementPoly),
+  tokens, refuseOverlaps, scoreElements, countOverlaps,
+  matchMembers, skinRects, loadRects, freeRects, segment: false };
+export { SEG };
