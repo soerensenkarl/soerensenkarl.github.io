@@ -14,6 +14,7 @@ body { margin: 0; min-height: 100vh; background: #fff; color: #111; display: fle
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Arial, sans-serif; -webkit-font-smoothing: antialiased }
 main { width: 100%; max-width: 1060px; margin: auto; display: flex; flex-direction: column; gap: 26px; padding: 24px 0 }
 canvas { display: block; width: 100%; aspect-ratio: 2.3; min-height: 200px; max-height: 64vh; touch-action: none; outline: none; -webkit-tap-highlight-color: transparent }
+canvas[hidden] { display: none }
 p { margin: 0; text-align: center; color: #8d8d88; font-size: 13.5px }
 .bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px }
 #caption, #status { font-size: 11px; letter-spacing: .14em; text-transform: uppercase }
@@ -26,14 +27,14 @@ select { padding-right: 32px; background-image: linear-gradient(45deg, transpare
 button:hover { border-color: #bbb }
 .sw { display: inline-flex; align-items: center; gap: 9px; padding: 0 4px; cursor: pointer;
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #c3c3be; -webkit-user-select: none; user-select: none }
-.sw.frame .t, .sw.block .b { color: #111 }
-#script { appearance: none; -webkit-appearance: none; position: relative; margin: 0; width: 50px; height: 30px; flex: none;
+.sw.off .t, .sw.on .b { color: #111 }
+.sw input { appearance: none; -webkit-appearance: none; position: relative; margin: 0; width: 50px; height: 30px; flex: none;
   border-radius: 999px; background: #e2e2de; cursor: pointer; transition: background .15s ease }
-#script::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+.sw input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
   background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .15s ease }
-#script:checked { background: #111 }
-#script:checked::after { transform: translateX(20px) }
-button:focus-visible, select:focus-visible, #script:focus-visible { outline: 2px solid #111; outline-offset: 2px }
+.sw input:checked { background: #111 }
+.sw input:checked::after { transform: translateX(20px) }
+button:focus-visible, select:focus-visible, .sw input:focus-visible { outline: 2px solid #111; outline-offset: 2px }
 footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .06em; padding: 10px 0 }
 @media (max-width: 620px) {
   body { padding-left: 12px; padding-right: 12px }
@@ -51,14 +52,16 @@ footer { text-align: center; color: #c3c3be; font-size: 11px; letter-spacing: .0
   <a class="back" href="../">← artifacts</a>
   <a class="back right" id="aboutLink" href="#" hidden>about</a>
   <canvas id="canvas" tabindex="0" aria-label="The wall: drag the crosses at its corners, and its openings"></canvas>
-  <p>A neural network writes the wall, part by part, in your browser. Drag the wall and its openings.</p>
+  <canvas id="gl" aria-label="The wall in three dimensions: drag to turn it" hidden></canvas>
+  <p>A neural network writes the wall, part by part, in your browser. <span id="hint">Drag the wall and its openings.</span></p>
   <div class="bar">
     <div><div id="caption"></div><div id="status" role="status"></div><div id="load" hidden><i></i></div></div>
     <div class="pills">
       <button id="addDoor" type="button">+ door</button>
       <button id="addWindow" type="button">+ window</button>
       <button id="random" type="button">↻ random</button>
-      <label class="sw" id="sw"><span class="t">timber</span><input type="checkbox" id="script" aria-label="Build concrete blocks instead of a timber frame"><span class="b">blocks</span></label>
+      <label class="sw off" id="sw"><span class="t">timber</span><input type="checkbox" id="script" aria-label="Build concrete blocks instead of a timber frame"><span class="b">blocks</span></label>
+      <label class="sw off" id="vsw"><span class="t">2D</span><input type="checkbox" id="view" aria-label="See the wall in three dimensions"><span class="b">3D</span></label>
     </div>
   </div>
   <p id="about" hidden></p>

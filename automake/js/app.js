@@ -9,15 +9,18 @@ import { BRIEFS, elementRect, ITEMS, makeScene, refuseOverlaps, skinOf, skinRect
 const qs = new URLSearchParams(location.search);
 const FORMAT = qs.get("format") || "f16";
 
-// the networks on offer: model/<file>.<format>.json/.bin, written by scripts/export_web_model.py
+// the networks on offer: model/<file>.<format>.json/.bin, written by scripts/export_web_model.py.
+// `view3d: true` on an entry gives that artifact the 2D/3D switch and nothing else the 3D view (js/view3d.js, and the
+// three.js it fetches the first time the switch is thrown); no entry has it yet, so no page carries any of it.
 const MODELS = [
   { id: "o4", file: "o4", name: "O4", title: "Frames, then blocks", scripts: ["frame", "block"],
     blurb: "The framing network, then 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted: no framing script or framing data in that stage." },
   // `loads: true` - the network reads the loads on the wall's top edge (sequence.py TYPES index 4). Only these
   // networks are given load tokens, and only for them does the page draw, drag or link a load. (The network reads a
   // line load too; the page offers only the point-load array, which is what a wall is designed for.)
-  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x9) and change `file`.
-  { id: "x8", file: "x8", name: "X8", title: "Designs with the forces", scripts: ["frame"], loads: true },
+  // To put a newer checkpoint behind this artifact, export it (scripts/export_web_model.py --name x11), change this
+  // entry's `id` and `file` with the `WALLS` and `ABOUT` keys, and pick its wall again with web/tests/pick_wall.mjs.
+  { id: "x10", file: "x10", name: "X10", title: "Designs with the forces", scripts: ["frame"], loads: true },
   { id: "n0", file: "n0", name: "N0", label: "N0 · frames only", scripts: ["frame"] },
   { id: "m0", file: "m0", name: "M0", label: "M0 · both together", scripts: ["frame", "block"] },
 ];
@@ -40,15 +43,15 @@ const SNAP = 0.015, STUD = 0.6, SPSNAP = [0.6, 0.4], EXACT = 5e-4;
 const WALLS = {
   n0: () => ({ script: "frame", L: 5.18, H: 2.63, openings: [door(0.535, 0.935, 2.08), win(2.695, 1.29, 1.0, 0.85)] }),
   o4: () => ({ script: "block", L: 5.23, H: 2.69, openings: [door(0.965, 0.9, 2.1), win(2.65, 0.89, 1.2, 0.59)] }),
-  // picked by trying: web/tests/pick_wall.mjs ranked 16 candidates and this one has the studs closest to the arrows
-  // (85 mm mean, against 114 mm for the script's 600 mm grid on the same wall) with all three arrows over an opening
-  // carried on a header, ends studded, 23 parts
-  x8: () => ({ script: "frame", L: 4.8, H: 2.7, openings: [door(0.7, 0.9, 2.05), win(2.4, 1.2, 1.1, 0.9)],
-                off: 0.45, sp: 0.6 }),
+  // picked by trying: web/tests/pick_wall.mjs ranked 16 candidates and this one shows the answer to the loads most
+  // plainly - every stud within 21 mm of an arrow, against 266 mm for the script's load-blind 600 mm grid on the same
+  // wall, both openings headed, jacked and silled, nothing hanging, all five arrows over an opening on a header, 24 parts
+  x10: () => ({ script: "frame", L: 5.4, H: 2.7, openings: [door(0.6, 0.9, 2.05), win(2.7, 1.2, 1.1, 0.9)],
+                off: 0.3, sp: 0.6 }),
 };
 const ABOUT = {
   n0: "An 8.8-million-parameter encoder-decoder transformer that has learned light timber framing by imitating a simple framing script, judged only by geometry. It reads the wall, its openings and the parts already there as boxes and writes each part as an item and four edges on a 5 mm ruler, one part at a time, with no framing rules built in. It runs entirely in your browser on WebAssembly; nothing is sent anywhere. Trained on 40,000 walls 2.4-6 m long; on walls it has not seen it writes 88% of the script's parts with 91% of its parts right.",
-  x8: "The framing network after nine rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it frames every opening on every side, stands a stud at each end of the wall, carries a load standing over a door or a window on a header, and leaves nothing hanging – and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
+  x10: "The framing network after eleven rounds of learning from the world's physics alone: a search that only knows 'slide a box, copy one, cut one, take one away' improved walls under load by the strain energy the world measures, and the network learned to reproduce them. It reads where the loads stand and designs with them: it now puts a stud under each of them – 21 mm away on the wall this page opens on, where the script's 600 mm grid leaves 266 – frames every opening on every side, carries a load standing over a door or a window on a header, and leaves nothing hanging, and was never told what a stud, a header or a jamb is. A stiffer wall is the aim; a stud under a load is one of the ways it gets there. Runs entirely in your browser; nothing is sent anywhere.",
   o4: "The same network after it had learned timber framing, then trained for 50 minutes on concrete-block walls. It kept its framing by rehearsing framed walls it had written itself and the world had accepted, with no framing script or framing data in that stage. Its framed walls are as good as before (88% of the script's parts, 91% right); its block walls get about 7 in 10 blocks right. It runs entirely in your browser on WebAssembly; nothing is sent anywhere.",
 };
 
@@ -208,6 +211,7 @@ fit(design);
 // ---------------------------------------------------------------- state
 let sel = -1, hover = null, drag = null, held = null;    // `held`: "sp" or "off" while the magnet holds this drag
 let scene = null, obs = [], parts = [], pending = [], hot = null;
+let mode3 = false, three = null;                         // the 3D view, built the first time it is asked for
 let runId = 1, timer = null, ready = false, wantRun = true;
 window.__automake = { loads: [], runs: [] };
 
@@ -379,7 +383,7 @@ function drawLoads(d, on) {
   ctx.restore();
 }
 
-function paint() {
+function paint2() {
   measure();
   const { L, H, openings } = design;
   ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
@@ -411,6 +415,12 @@ function paint() {
     ctx.strokeStyle = hover === `o:${i}:x` ? "#000" : "#999"; ctx.lineWidth = hover === `o:${i}:x` ? 2 : 1;
     ctx.beginPath(); ctx.moveTo(dx - 4, dy - 4); ctx.lineTo(dx + 4, dy + 4); ctx.moveTo(dx + 4, dy - 4); ctx.lineTo(dx - 4, dy + 4); ctx.stroke();
   });
+}
+
+// the same wall, in whichever view is open
+function paint() {
+  if (mode3 && three) three.draw({ design, parts, hot, ebox, showLoads: readsLoads() });
+  else paint2();
 }
 
 // parts appear one by one, never all at once: one a frame, a little faster when many are waiting
@@ -543,18 +553,36 @@ function sync() {
   const sw = $("sw");                                    // a control that can do nothing is removed, never greyed
   if (sw) {
     if (m.scripts.length < 2) sw.remove();
-    else { $("script").checked = design.script === "block"; sw.className = `sw ${design.script}`; }
+    else { $("script").checked = design.script === "block"; sw.className = `sw ${design.script === "block" ? "on" : "off"}`; }
   }
   $("addDoor").hidden = $("addWindow").hidden = design.openings.length >= MAXOPS || !freeSpan(design);   // a control that cannot act is absent
 }
 $("script")?.addEventListener("change", e => { design.script = e.target.checked ? "block" : "frame"; changed(); });
+
+// the 3D view: only the artifacts whose MODELS entry asks for it have the switch at all
+const vsw = $("vsw");
+if (!MODELS.find(m => m.id === modelId).view3d) vsw.remove();
+else vsw.addEventListener("change", async e => {
+  const on = e.target.checked;
+  const show = ok => { mode3 = ok; vsw.className = `sw ${ok ? "on" : "off"}`; $("view").checked = ok;
+    $("canvas").hidden = ok; $("gl").hidden = !ok;
+    $("hint").textContent = ok ? "Drag to turn the wall." : "Drag the wall and its openings."; };
+  show(on);
+  if (on && !three) {
+    const was = $("status").textContent;
+    status("opening the 3D view…");
+    try { three = await (await import("./view3d.js")).init($("gl")); status(was); }
+    catch { show(false); status("the 3D view could not load"); }
+  }
+  paint();
+});
 $("addDoor").addEventListener("click", () => addOpening("door"));
 $("addWindow").addEventListener("click", () => addOpening("window"));
 $("random").addEventListener("click", () => { design = randomDesign(); sel = -1; changed(); });
 if (ABOUT[modelId]) { $("about").textContent = ABOUT[modelId]; $("aboutLink").hidden = false; }
 $("aboutLink").addEventListener("click", e => { e.preventDefault(); $("about").hidden = !$("about").hidden; });
 addEventListener("resize", paint);
-if (window.ResizeObserver) new ResizeObserver(paint).observe(canvas);
+if (window.ResizeObserver) { const ro = new ResizeObserver(paint); ro.observe(canvas); ro.observe($("gl")); }
 
 sync();
 writeHash();
