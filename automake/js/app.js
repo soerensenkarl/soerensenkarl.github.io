@@ -652,10 +652,13 @@ const cellCol = p => clamp(Math.floor((mx(p.x) - CELLX) / (TPL.STEP * cs())), -1
 // right edge or past the left one it wraps round, which is how an offset course is drawn - else a half block
 const dragSpan = (u0, col) => col == null || col === u0 ? [u0, 1] : col > u0 ? [u0, 2] : [(u0 + 3) % 4, 2];
 
-function blockRects(b) {                                 // one block in page metres; two pieces when it wraps
+// One block in page metres. A block that wraps is drawn whole, standing out past the window's left edge the way the
+// course really runs (Karl, 2026-09-20: two stubs read as two half blocks), and the place it comes round to at the
+// right edge is a ghost, the fifth value: the same block, one period along.
+function blockRects(b) {
   const [c, u, n] = b, y0 = cellPy(c), y1 = y0 + TPL.HEIGHT * cs();
   const x0 = cellPx(u), len = (n > 1 ? TPL.FULL : TPL.HALF) * cs(), over = x0 + len - (CELLX + cellW());
-  return over > 1e-9 ? [[x0, y0, CELLX + cellW(), y1], [CELLX, y0, CELLX + over, y1]] : [[x0, y0, x0 + len, y1]];
+  return over > 1e-9 ? [[x0 - cellW(), y0, x0 - cellW() + len, y1], [x0, y0, CELLX + cellW(), y1, true]] : [[x0, y0, x0 + len, y1]];
 }
 
 function litCells() {                                    // the cells the hand is holding, or the one under it
@@ -678,10 +681,10 @@ function drawCell() {
     for (const u of lit.us)
       ctx.fillRect(px(cellPx(u)), py(cellPy(lit.c) + TPL.COURSE * cs()), v.s * TPL.STEP * cs(), v.s * TPL.COURSE * cs());
   }
-  for (const b of design.cell) for (const [x0, y0, x1, y1] of blockRects(b)) {
+  for (const b of design.cell) for (const [x0, y0, x1, y1, ghost] of blockRects(b)) {
     ctx.beginPath(); ctx.rect(px(x0), py(y1), v.s * (x1 - x0), v.s * (y1 - y0));
-    ctx.fillStyle = FILL.block[0]; ctx.fill();
-    ctx.strokeStyle = FILL.block[1]; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = ghost ? "#f3f3f1" : FILL.block[0]; ctx.fill();
+    ctx.strokeStyle = ghost ? "#c9c9c4" : FILL.block[1]; ctx.lineWidth = 1; ctx.stroke();
   }
   outline(boxPoly([CELLX, CELLY, xr, yt]), [1, 3], "#555", 1);
 }
@@ -785,6 +788,8 @@ function hit(p) {
   if (readsTemplate()) {                                 // the window stands clear of the longest wall, so it goes first
     const c = Math.floor((my(p.y) - CELLY) / (TPL.COURSE * cs())), u = Math.floor((mx(p.x) - CELLX) / (TPL.STEP * cs()));
     if (c >= 0 && c < TPL.COURSES && u >= 0 && u < 4) return `t:${c}:${u}`;
+    // the part of a wrapping block that stands out past the left edge is the block too: it is step 3, one period back
+    if (c >= 0 && c < TPL.COURSES && u === -1 && design.cell.some(b => b[0] === c && b[1] + b[2] > 4)) return `t:${c}:3`;
   }
   if (readsHeavy() && design.kx !== undefined                  // the heavy load hangs from higher up than the array
       && p.y >= py(H + HARROW) - 9 && p.y <= py(H + LFOOT) + 5 && Math.abs(p.x - px(design.kx)) <= 12) return "k";
