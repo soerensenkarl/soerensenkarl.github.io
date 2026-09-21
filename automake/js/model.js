@@ -332,6 +332,11 @@ export class M0 {
     const { d, W } = this;
     const table = this.buf("codeTable", this.nCodes * d);          // in the arena, for the WebAssembly backend
     const sec = new Float32Array(2), mid = new Float32Array(d), row = new Float32Array(d), ce = W["code_emb.weight"];
+    // mat_emb: what the item is made of (encode.mat_features, in the manifest as `materials`), through Linear(2, d),
+    // GELU, Linear(d, d) with no bias anywhere, added to the section's row. A timber item reads (0, 0) and gets
+    // nothing; it is what tells a lintel from a block, which are one section. A checkpoint from before has neither.
+    const mats = W["mat_emb.0.weight"] ? this.manifest.materials : null;
+    const mat = new Float32Array(2), mrow = new Float32Array(d);
     for (let i = 0; i < this.nItems; i++) {
       const s = itemSec(this.items[i]);
       sec[0] = s[0]; sec[1] = s[1];
@@ -342,6 +347,14 @@ export class M0 {
       for (let k = 0; k < d; k++) mid[k] = gelu(mid[k]);
       linear(mid, 0, W["sec_emb.2.weight"], W["sec_emb.2.bias"], row, 0, d, d);
       layerNorm(row, 0, W["sec_emb.3.weight"], W["sec_emb.3.bias"], row, 0, d);
+      if (mats) {
+        const m = mats[this.items[i]];
+        mat[0] = m[0]; mat[1] = m[1];
+        linear(mat, 0, W["mat_emb.0.weight"], null, mid, 0, 2, d);
+        for (let k = 0; k < d; k++) mid[k] = gelu(mid[k]);
+        linear(mid, 0, W["mat_emb.2.weight"], null, mrow, 0, d, d);
+        for (let k = 0; k < d; k++) row[k] += mrow[k];
+      }
       for (let c = 0; c < N_CODE; c++) {
         const o = (i * N_CODE + c) * d, co = c * d;
         for (let k = 0; k < d; k++) table[o + k] = row[k] + ce[co + k];
@@ -375,8 +388,31 @@ export class M0 {
     const boxBins = this.segment ? tok.rects.map((r, i) => this.rectBins(segBox(r, tok.thick[i]))) : bins;
     const inside = this.segment ? this.insidePoly(tok, bins, gx, gy, P) : null;
     const add = (dst, o, src, so) => { for (let k = 0; k < d; k++) dst[o + k] += src[so + k]; };
+    // network.cell_phase: every edge's place in the drawn cell's period (CELL_TICKS along the wall and up it), counted
+    // from the wall's bottom-left corner - the least x and y of its outline tokens. A checkpoint from before has no map.
+    const PW = W["phase_proj.weight"], CELL_TICKS = 160, ph = new Float32Array(24);
+    let ox = Infinity, oy = Infinity;
+    if (PW) for (let i = 0; i < N; i++) if (tok.types[i] === 0) {
+      ox = Math.min(ox, bins[i][0], bins[i][2]); oy = Math.min(oy, bins[i][1], bins[i][3]);
+    }
+    if (!isFinite(ox)) ox = 0;
+    if (!isFinite(oy)) oy = 0;
     for (let i = 0; i < N; i++) {
       const o = i * d;
+      if (PW) {
+        for (let f = 0; f < 4; f++) {
+          const rel = (((bins[i][f] - (f % 2 ? oy : ox)) % CELL_TICKS) + CELL_TICKS) % CELL_TICKS;
+          for (let h = 0; h < 3; h++) {
+            const a = rel * (1 << h) * (2 * Math.PI / CELL_TICKS);
+            ph[f * 6 + h] = f32(Math.sin(a)); ph[f * 6 + 3 + h] = f32(Math.cos(a));
+          }
+        }
+        for (let k = 0, wo = 0; k < d; k++, wo += 24) {
+          let v = 0;
+          for (let j = 0; j < 24; j++) v += PW[wo + j] * ph[j];
+          X[o + k] += v;
+        }
+      }
       add(X, o, W["type_emb.weight"], tok.types[i] * d);
       // the code a token carries, on the same table the head picks from; token item 0 ("none") is a zero row
       if (!this.segment) add(X, o, W["item_in.weight"], tok.items[i] * d);
