@@ -642,11 +642,15 @@ function drawLoads(d, on, onK) {
 
 // The pattern cell: the window the wall is asked to repeat, standing beside the wall at the blocks' true proportions
 // (390 x 190 with 10 mm joints). Click a cell for a half block, drag across two for a whole one, click a block to take
-// it away; drag off the right edge and the block wraps round to the left, where its stub is drawn.
+// it away; drag off either edge and the block wraps round to the other side, where its stub is drawn - an offset course
+// (the second course of a running bond) is drawn that way.
 const cellPx = u => CELLX + u * TPL.STEP * cs();
 const cellPy = c => CELLY + c * TPL.COURSE * cs();
 const cellW = () => TPL.WIDTH * cs(), cellH = () => TPL.COURSES * TPL.COURSE * cs();
-const cellCol = p => clamp(Math.floor((mx(p.x) - CELLX) / (TPL.STEP * cs())), 0, 4);   // 4: one step past the edge
+const cellCol = p => clamp(Math.floor((mx(p.x) - CELLX) / (TPL.STEP * cs())), -1, 4);   // -1 and 4: one step past either edge
+// the block a drag from step u0 to column `col` lays: a whole one towards whichever side the hand went - past the
+// right edge or past the left one it wraps round, which is how an offset course is drawn - else a half block
+const dragSpan = (u0, col) => col == null || col === u0 ? [u0, 1] : col > u0 ? [u0, 2] : [(u0 + 3) % 4, 2];
 
 function blockRects(b) {                                 // one block in page metres; two pieces when it wraps
   const [c, u, n] = b, y0 = cellPy(c), y1 = y0 + TPL.HEIGHT * cs();
@@ -658,8 +662,8 @@ function litCells() {                                    // the cells the hand i
   const h = drag && drag.h[0] === "t" ? drag.h : (hover || "").startsWith("t:") ? hover : null;
   if (!h) return null;
   const [, c, u0] = h.split(":").map(Number);
-  const n = clamp((drag && drag.h === h && drag.col != null ? drag.col : u0) - u0 + 1, 1, 2);
-  return { c, us: Array.from({ length: n }, (_, i) => (u0 + i) % 4) };
+  const [u, n] = dragSpan(u0, drag && drag.h === h ? drag.col : null);
+  return { c, us: Array.from({ length: n }, (_, i) => (u + i) % 4) };
 }
 
 function drawCell() {
@@ -685,9 +689,9 @@ function drawCell() {
 // one gesture on the window: a click on a block takes it away, a click on an empty cell lays a half block, and a drag
 // across two cells lays a whole one, over whatever stood there
 function editCell(t) {
-  const [, c, u] = t.h.split(":").map(Number);
-  const n = clamp((t.col == null ? u : t.col) - u + 1, 1, 2);
-  const at = design.cell.findIndex(b => b[0] === c && steps(b).includes(u));
+  const [, c, u0] = t.h.split(":").map(Number);
+  const [u, n] = dragSpan(u0, t.col);
+  const at = design.cell.findIndex(b => b[0] === c && steps(b).includes(u0));
   if (n === 1 && at >= 0) { design.cell.splice(at, 1); return; }
   const want = steps([c, u, n]);
   design.cell = design.cell.filter(b => b[0] !== c || !steps(b).some(s => want.includes(s)));
